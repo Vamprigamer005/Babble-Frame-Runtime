@@ -3,12 +3,14 @@
 #include "core/clock.h"
 #include "core/log.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -22,12 +24,14 @@ namespace {
 // UVC class-specific requests to the control interface.
 constexpr uint8_t kSetCur = 0x01, kGetCur = 0x81, kGetLen = 0x85;
 constexpr uint8_t kToInterface = 0x21, kFromInterface = 0xa1;
-constexpr unsigned kTimeoutMs = 1000;
+// The tracker answers a control request in a few milliseconds. A short timeout keeps a stalled tracker from holding
+// the camera thread for long, because stop() joins it and the main thread waits.
+constexpr unsigned kTimeoutMs = 200;
 
 // The Extension Unit control that SRanipal talks to, and the unit id the tracker has had so far.
 constexpr uint8_t kSelector = 2, kUsualUnit = 4;
 // The commands in the first byte of a control block.
-constexpr uint8_t kTaskSet = 0x50, kTaskGet = 0x51;
+constexpr uint8_t kTaskSet = 0x50;   // 0x51 reads a register back; the runtime only writes.
 constexpr uint8_t kRegSensor = 0xab, kStreamEnable = 0x14;
 // The first byte of a GET_CUR answer: the command is still running, or it finished and is echoed back.
 constexpr uint8_t kPending = 0x55, kDone = 0x56;
@@ -49,10 +53,17 @@ public:
         recv_.assign(n, 0);
     }
 
-    // Sends a command without waiting for the tracker to finish it.
+    // Sends a command without waiting for the tracker to finish it. Only the first n bytes of the block change;
+    // the rest keeps whatever an earlier command left there (the 0x53/0x54 marks of the test block, for example),
+    // which is what SRanipal and the Babble App send and what the tracker is known to accept.
     bool set_no_response(const uint8_t *cmd, size_t n, std::string *error) {
-        std::fill(send_.begin(), send_.end(), 0);
         memcpy(send_.data(), cmd, std::min(n, send_.size()));
+        if (LOG.debug_enabled()) {
+            char hex[3 * 17 + 1] = "";
+            for (size_t i = 0; i < std::min<size_t>(n, 17); i++)
+                snprintf(hex + 3 * i, 4, "%02x ", cmd[i]);
+            LOG.debug("vive: SET_CUR [%s]", hex);
+        }
         const int r = dev_.control(kToInterface, kSetCur, uint16_t(kSelector << 8), uint16_t(unit_ << 8 | iface_),
                                    send_.data(), uint16_t(send_.size()), kTimeoutMs);
         if (r < 0) {
@@ -125,6 +136,10 @@ std::vector<uint8_t> test_block(size_t n) {
 }
 
 // A register access: 1-byte address and 1-byte value, both sent big-endian in 4 bytes, on page 0x90010001.
+// The Babble App's Python writes "(x > 24) & 0xff" where it means "(x >> 24) & 0xff", so it sends 0x01 in the
+// three high bytes of most addresses and values; the tracker accepts that, which shows it reads only the low byte
+// when the width fields say 1. This sends the intended zeros. If a tracker ever stays dark, this is the first
+// place to compare against a USB capture.
 std::array<uint8_t, 17> register_block(uint8_t task, uint8_t reg, uint32_t address, uint32_t value) {
     std::array<uint8_t, 17> b{};
     b[0] = task;
@@ -218,8 +233,11 @@ bool activate(Device &dev, const uvc::Info &info, std::string *error) {
     };
     for (const auto &[address, value] : regs)
         if (!set_sensor_register(xu, address, value, error)) {
-            if (error)
-                *error += " (sensor register " + std::to_string(address) + ")";
+            if (error) {
+                char which[40];
+                snprintf(which, sizeof which, " (sensor register 0x%02x = 0x%02x)", address, value);
+                *error += which;
+            }
             return false;
         }
 

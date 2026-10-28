@@ -4,6 +4,9 @@ name: Sync upstream
 # upstream stable release; when there is one that this fork has not built yet, it merges that release into main
 # and starts the Build workflow to publish "<upstream tag>-101" (the fork's version scheme, see README). A merge
 # conflict fails this job so someone can resolve it by hand; nothing is force-pushed.
+#
+# GitHub turns scheduled workflows off after 60 days without any commit to the repository, and emails the owner.
+# A quiet upstream can trigger that; re-enable it on the Actions page when it happens.
 
 on:
   schedule:
@@ -18,6 +21,11 @@ on:
 permissions:
   contents: write
   actions: write
+
+# One run at a time, so a slow run and the next timer tick never both merge and push.
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
 
 env:
   UPSTREAM: Project-Babble/Babble-Frame-Runtime
@@ -41,8 +49,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$(gh api "repos/${UPSTREAM}/releases?per_page=30" \
-            --jq '[.[] | select(.draft|not) | select(.prerelease|not)] | first | .tag_name // empty')"
+          # Only tags of the form Vx.y-Release count, and the highest version wins, not the newest upload.
+          tag="$(gh api "repos/${UPSTREAM}/releases?per_page=50" --jq '
+            [.[] | select(.draft|not) | select(.prerelease|not)
+                 | select(.tag_name | test("^V[0-9]+\\.[0-9]+-Release$"))
+                 | .tag_name]
+            | sort_by(capture("^V(?<a>[0-9]+)\\.(?<b>[0-9]+)-Release$") | [(.a|tonumber), (.b|tonumber)])
+            | last // empty')"
           if [[ -z "$tag" ]]; then
             echo "No upstream stable release found." >&2
             exit 1
@@ -59,7 +72,10 @@ jobs:
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" --jq '.[].tag_name' > fork_tags.txt
           echo "Fork releases:"; cat fork_tags.txt
-          have="$(grep -c "^${TAG}-" fork_tags.txt || true)"
+          # Fork builds of this tag are "<tag>-<number>". The dot in the tag is escaped for the regex.
+          pattern="^${TAG//./\\.}-[0-9]+\$"
+          echo "$pattern" > fork_pattern.txt
+          have="$(grep -cE -- "$pattern" fork_tags.txt || true)"
           if [[ "$have" != "0" && "$FORCE" != "true" ]]; then
             echo "A fork release for $TAG exists already ($have found); nothing to do."
             echo "build=false" >> "$GITHUB_OUTPUT"
@@ -94,7 +110,8 @@ jobs:
           TAG: ${{ steps.upstream.outputs.tag }}
         run: |
           # The next free build number for this upstream tag: 101, or one more than the highest one published.
-          n="$(grep "^${TAG}-" fork_tags.txt | sed "s/^${TAG}-//" | sort -n | tail -n1)"
+          # grep finds nothing for a new tag, which is the normal case, so its exit status must not end the step.
+          n="$( { grep -E -- "$(cat fork_pattern.txt)" fork_tags.txt || true; } | sed "s/^${TAG}-//" | sort -n | tail -n1)"
           build="${FORK_BUILD}"
           if [[ -n "$n" && "$n" -ge "$FORK_BUILD" ]]; then build=$((n + 1)); fi
           version="${TAG}-${build}"
