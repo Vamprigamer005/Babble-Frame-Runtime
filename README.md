@@ -42,11 +42,14 @@ left of the tracker's two side-by-side sensor images to the mouth model, as the 
   of the Babble tab, where rotation and flips can be set if the picture is the wrong way up.
 - Versions follow the [finaea fork](https://github.com/finaea/Babble-Frame-Runtime) scheme: `V1.2 Release 101` is
   the first fork build on upstream `V1.2 Release`. The updater in the Babble tab follows this fork's releases.
+- The fork keeps itself current: the `Sync upstream` workflow checks for new upstream releases every six hours,
+  merges each one into `main` and publishes a fork build of it, so updates arrive in the Babble tab as usual. Only
+  a merge conflict needs a person.
 
-Install it with the upstream one-liner pointed at this repository (replace `OWNER`):
+Install it with the upstream one-liner pointed at this repository:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/OWNER/Babble-Frame-Runtime/main/tools/get.sh | BABBLE_REPO=OWNER/Babble-Frame-Runtime bash
+curl -fsSL https://raw.githubusercontent.com/Vamprigamer005/Babble-Frame-Runtime/main/tools/get.sh | BABBLE_REPO=Vamprigamer005/Babble-Frame-Runtime bash
 ```
 
 ## Install

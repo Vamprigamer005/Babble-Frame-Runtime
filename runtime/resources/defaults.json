@@ -339,7 +339,7 @@
   },
   "update": {
     "enabled": true,
-    "repo": "Project-Babble/Babble-Frame-Runtime",
+    "repo": "Vamprigamer005/Babble-Frame-Runtime",
     "api_url": "https://api.github.com/repos/{repo}/releases?per_page=30",
     "prereleases": "auto",
     "check_hours": 6

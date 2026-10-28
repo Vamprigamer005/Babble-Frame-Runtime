@@ -1,0 +1,100 @@
+name: Sync upstream
+
+# Keeps this fork current with Project-Babble/Babble-Frame-Runtime on its own. Every few hours it looks for a new
+# upstream stable release; when there is one that this fork has not built yet, it merges that release into main
+# and starts the Build workflow to publish "<upstream tag>-101" (the fork's version scheme, see README). A merge
+# conflict fails this job so someone can resolve it by hand; nothing is force-pushed.
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild even if a fork release for the newest upstream release already exists'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM: Project-Babble/Babble-Frame-Runtime
+  FORK_BUILD: '101'
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Find the newest upstream stable release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api "repos/${UPSTREAM}/releases?per_page=30" \
+            --jq '[.[] | select(.draft|not) | select(.prerelease|not)] | first | .tag_name // empty')"
+          if [[ -z "$tag" ]]; then
+            echo "No upstream stable release found." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Upstream newest release: $tag"
+
+      - name: Check whether this fork already built it
+        id: ours
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.upstream.outputs.tag }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          have="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" \
+            --jq --arg t "${TAG}-" '[.[] | select(.tag_name | startswith($t))] | length')"
+          if [[ "$have" != "0" && "$FORCE" != "true" ]]; then
+            echo "A fork release for $TAG exists already ($have found); nothing to do."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge the upstream release into main
+        if: steps.ours.outputs.build == 'true'
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM}.git"
+          git fetch --no-tags upstream "refs/tags/${TAG}:refs/tags/upstream/${TAG}"
+          if git merge-base --is-ancestor "upstream/${TAG}" HEAD; then
+            echo "main already contains upstream $TAG."
+          else
+            if ! git merge --no-edit -m "Merge upstream ${TAG}" "upstream/${TAG}"; then
+              echo "::error::Merging upstream ${TAG} conflicts with the fork's changes; resolve by hand."
+              git diff --name-only --diff-filter=U
+              exit 1
+            fi
+            git push origin HEAD:main
+          fi
+
+      - name: Start the Build workflow
+        if: steps.ours.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          gh workflow run build.yml --ref main \
+            -f publish-release=true \
+            -f version-number="${TAG}-${FORK_BUILD}" \
+            -f release-name-info="Vive Facial Tracker" \
+            -f release-notes="Upstream ${TAG} with Vive Facial Tracker support (see README). Upstream notes: https://github.com/${UPSTREAM}/releases/tag/${TAG}"
+          echo "Build started for ${TAG}-${FORK_BUILD}."
