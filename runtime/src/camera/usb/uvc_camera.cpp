@@ -118,6 +118,15 @@ bool Camera::open(const usb::Found &found, const Mode &mode, std::string *error)
               probe_.max_payload_transfer_size);
     if (!probe_.max_video_frame_size)
         probe_.max_video_frame_size = frame_.max_frame_bytes;
+
+    // The Vive Facial Tracker sends no frames until its sensor is set up and its stream is turned on through its
+    // vendor Extension Unit. That happens between the probe and the commit, where SRanipal and the Babble App do it
+    // (a V4L2 S_FMT probes; the commit comes with STREAMON).
+    if (usb::vive::is_tracker(found) && !usb::vive::activate(dev_, info_, error)) {
+        close();
+        return false;
+    }
+
     // Commit the block that the camera answered, so that its own fields stay as it set them.
     if (accepted)
         block = got;
@@ -125,13 +134,6 @@ bool Camera::open(const usb::Found &found, const Mode &mode, std::string *error)
     if (r < 0) {
         if (error)
             *error = std::string("UVC commit: ") + strerror(-r);
-        close();
-        return false;
-    }
-
-    // The Vive Facial Tracker sends no frames until its sensor is set up and its stream is turned on through its
-    // vendor Extension Unit, so that happens after the commit and before the first transfer is queued.
-    if (usb::vive::is_tracker(found) && !usb::vive::activate(dev_, info_, error)) {
         close();
         return false;
     }

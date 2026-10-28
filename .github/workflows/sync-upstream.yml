@@ -58,7 +58,7 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
         run: |
           have="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" \
-            --jq --arg t "${TAG}-" '[.[] | select(.tag_name | startswith($t))] | length')"
+            --jq "[.[] | select(.tag_name | startswith(\"${TAG}-\"))] | length")"
           if [[ "$have" != "0" && "$FORCE" != "true" ]]; then
             echo "A fork release for $TAG exists already ($have found); nothing to do."
             echo "build=false" >> "$GITHUB_OUTPUT"
