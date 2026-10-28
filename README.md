@@ -26,6 +26,29 @@ so a problem in the runtime never affects SteamVR.
 Work in progress. The mouth and eye models are prototypes; the runtime keeps models swappable so better ones can be
 dropped in.
 
+## About this fork: Vive Facial Tracker support
+
+This fork of [Project-Babble/Babble-Frame-Runtime](https://github.com/Project-Babble/Babble-Frame-Runtime) lets an
+**HTC Vive Facial Tracker** plugged into the Steam Frame's USB-C port be the mouth camera, so no PC cable is needed.
+Everything else is the upstream runtime.
+
+The tracker is a UVC camera that stays dark until its sensor is set up and its stream is turned on through a vendor
+Extension Unit. The runtime now sends that sequence (from Project Babble's
+[reverse engineering of SRanipal](https://docs.babble.diy/blog/reverse-engineering-the-vive-facial-tracker) and the
+Babble App's `vivefacialtracker` module, MIT, DragonDreams GmbH 2024), streams YUY2 400x400 at 60 fps, and feeds the
+left of the tracker's two side-by-side sensor images to the mouth model, as the Babble App does.
+
+- The tracker is picked automatically when no Babble tracker is plugged in. It also appears on the USB Camera page
+  of the Babble tab, where rotation and flips can be set if the picture is the wrong way up.
+- Versions follow the [finaea fork](https://github.com/finaea/Babble-Frame-Runtime) scheme: `V1.2 Release 101` is
+  the first fork build on upstream `V1.2 Release`. The updater in the Babble tab follows this fork's releases.
+
+Install it with the upstream one-liner pointed at this repository (replace `OWNER`):
+
+```
+curl -fsSL https://raw.githubusercontent.com/OWNER/Babble-Frame-Runtime/main/tools/get.sh | BABBLE_REPO=OWNER/Babble-Frame-Runtime bash
+```
+
 ## Install
 
 On the Steam Frame, switch to Desktop Mode, open Konsole and paste:

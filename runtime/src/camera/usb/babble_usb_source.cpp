@@ -1,6 +1,7 @@
 #include "camera/usb/babble_usb_source.h"
 
 #include "camera/usb/uvc_camera.h"
+#include "camera/usb/vive_tracker.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "model/image_ops.h"
@@ -127,8 +128,12 @@ const char *BabbleUsbSource::state_name() const {
 
 BabbleUsbSource::CameraSettings BabbleUsbSource::settings_for(const usb::Found &dev) const {
     CameraSettings s;
-    s.mode = {uvc::FormatKind::Mjpeg, width_, height_, fps_};
-    s.flip_h = dev.vendor == vendor_ && dev.product == product_ && tracker_flip_h_;
+    if (usb::vive::is_tracker(dev)) {
+        s.mode = usb::vive::default_mode();   // YUY2 400x400 at 60 fps is the only stream the tracker has.
+    } else {
+        s.mode = {uvc::FormatKind::Mjpeg, width_, height_, fps_};
+        s.flip_h = dev.vendor == vendor_ && dev.product == product_ && tracker_flip_h_;
+    }
     const auto it = cameras_.find(usb::device_id(dev));
     if (it == cameras_.end() || !it->is_object())
         return s;
@@ -232,9 +237,13 @@ std::optional<usb::Found> BabbleUsbSource::pick() const {
                 return c;
         return std::nullopt;
     }
-    // The automatic choice is the Babble tracker if it is plugged in, or else the first camera.
+    // The automatic choice is the Babble tracker if it is plugged in, then a Vive Facial Tracker, or else the first
+    // camera.
     for (const auto &c : cams)
         if (c.vendor == vendor_ && c.product == product_)
+            return c;
+    for (const auto &c : cams)
+        if (usb::vive::is_tracker(c))
             return c;
     if (!cams.empty())
         return cams.front();
@@ -353,6 +362,10 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
     const uvc::FormatKind format = cam.format();
     const std::string camera_id = usb::device_id(dev);
     const uint16_t fw = cam.frame_size().width, fh = cam.frame_size().height;
+    // A Vive Facial Tracker frame has its two sensor images side by side; the left one goes to the model.
+    const bool left_half = usb::vive::is_tracker(dev) && fw >= 2;
+    if (left_half)
+        LOG.info("%s: Vive Facial Tracker: using the left %ux%u sensor image of each frame", name_.c_str(), fw / 2, fh);
 
     uint32_t seq = 0;
     uint64_t last_dropped = 0;
@@ -386,12 +399,16 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                     undecodable_.add();
                     return;
                 }
+                if (left_half)
+                    usb::vive::keep_left_half(dst, w, h, &w);
             } else {
                 scratch_[0].resize(pool_pixels_);
                 if (!uvc::to_gray(format, data, size, fw, fh, scratch_[0].data(), pool_pixels_, &w, &h)) {
                     undecodable_.add();
                     return;
                 }
+                if (left_half)
+                    usb::vive::keep_left_half(scratch_[0].data(), w, h, &w);
                 transform(scratch_, w, h, rotate, flip_h, flip_v, dst, &w, &h);
             }
             if (want_preview) {

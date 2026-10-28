@@ -1,5 +1,6 @@
 #include "camera/usb/uvc_camera.h"
 
+#include "camera/usb/vive_tracker.h"
 #include "core/log.h"
 
 #include <algorithm>
@@ -124,6 +125,13 @@ bool Camera::open(const usb::Found &found, const Mode &mode, std::string *error)
     if (r < 0) {
         if (error)
             *error = std::string("UVC commit: ") + strerror(-r);
+        close();
+        return false;
+    }
+
+    // The Vive Facial Tracker sends no frames until its sensor is set up and its stream is turned on through its
+    // vendor Extension Unit, so that happens after the commit and before the first transfer is queued.
+    if (usb::vive::is_tracker(found) && !usb::vive::activate(dev_, info_, error)) {
         close();
         return false;
     }

@@ -52,6 +52,7 @@ struct Info {
     bool bulk = false;                    // True for a bulk endpoint on alt 0, false for isochronous alts.
     std::vector<Alt> alts;                // The isochronous alternate settings, smallest first.
     std::vector<Format> formats;          // The formats in descriptor order, Unknown ones included.
+    std::vector<uint8_t> extension_units; // The bUnitID of each Extension Unit of the control interface, in order.
 };
 
 // Parses a full configuration descriptor and returns nullopt if it has no video streaming interface or no format

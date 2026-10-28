@@ -14,7 +14,7 @@ namespace {
 
 constexpr uint8_t kInterface = 0x04, kEndpoint = 0x05, kClassInterface = 0x24;
 constexpr uint8_t kVideoClass = 0x0e, kControlSub = 0x01, kStreamingSub = 0x02;
-constexpr uint8_t kVcHeader = 0x01;
+constexpr uint8_t kVcHeader = 0x01, kVcExtensionUnit = 0x06;
 constexpr uint8_t kVsFormatUncompressed = 0x04, kVsFrameUncompressed = 0x05, kVsFormatMjpeg = 0x06,
                   kVsFrameMjpeg = 0x07;
 
@@ -113,6 +113,8 @@ std::optional<Info> parse_config(const uint8_t *data, size_t size, std::string *
             const uint8_t sub = d[2];
             if (cur_sub == kControlSub && sub == kVcHeader && len >= 5) {
                 info.bcd_uvc = u16(d + 3);
+            } else if (cur_sub == kControlSub && sub == kVcExtensionUnit && len >= 4) {
+                info.extension_units.push_back(d[3]);   // bUnitID, for vendor controls such as the Vive tracker's.
             } else if (cur_sub == kStreamingSub && (sub == kVsFormatMjpeg || sub == kVsFormatUncompressed) && len >= 5) {
                 Format f;
                 f.index = d[3];

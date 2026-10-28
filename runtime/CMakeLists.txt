@@ -42,6 +42,7 @@ add_library(babble_core STATIC
     src/camera/usb/usb_device.cpp
     src/camera/usb/uvc.cpp
     src/camera/usb/uvc_camera.cpp
+    src/camera/usb/vive_tracker.cpp
     src/platform/app_launcher.cpp
     src/platform/diagnostics.cpp
     src/platform/eye_server_client.cpp
@@ -180,6 +181,7 @@ if(BABBLE_TESTS)
         tests/test_plugin_sink.cpp
         tests/test_link_sink.cpp
         tests/test_babble_tracker.cpp
+        tests/test_vive_tracker.cpp
         tests/test_pipeline_base.cpp
         tests/test_log.cpp
         tests/test_vrc_native.cpp
