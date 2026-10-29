@@ -73,6 +73,7 @@ BabbleUsbSource::BabbleUsbSource(const nlohmann::json &cfg, SourceDeps deps)
       width_(cfg.value("width", uint16_t(240))), height_(cfg.value("height", uint16_t(240))),
       fps_(cfg.value("fps", 30.0)), tracker_flip_h_(cfg.value("tracker_flip_h", true)),
       stereo_(cfg.value("stereo", false)),
+      vive_crop_height_(std::clamp(cfg.value("vive_crop_height", 400), 50, 400)),
       cameras_(cfg.contains("cameras") && cfg["cameras"].is_object() ? cfg["cameras"] : nlohmann::json::object()),
       limiter_(cfg.value("process_fps", 30.0)) {
     const auto backoff = cfg.value("reopen_backoff_ms", nlohmann::json::object());
@@ -208,6 +209,14 @@ bool BabbleUsbSource::set_camera_option(const std::string &key, const nlohmann::
 bool BabbleUsbSource::set_option(const std::string &key, const nlohmann::json &value) {
     if (key.starts_with("cameras/"))
         return set_camera_option(key.substr(8), value);
+    if (key == "vive_crop_height" && value.is_number()) {
+        const int h = int(value.get<double>());
+        if (h < 50 || h > 400)
+            return false;
+        vive_crop_height_.store(h, std::memory_order_relaxed);
+        LOG.info("%s: Vive tracker frames keep the top %d rows", name_.c_str(), h);
+        return true;
+    }
     if (key != "camera" || !value.is_string())
         return false;
     if (value.get<std::string>() == camera_)
@@ -410,15 +419,16 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                     return;
                 }
                 const int vw = left_half ? w / 2 : w;
+                const int vh = left_half ? std::min(h, vive_crop_height_.load(std::memory_order_relaxed)) : h;
                 scratch_[0].resize(pool_pixels_);
                 int lw = 0, lh = 0, rw = 0, rh = 0;
                 for (int v = 0; v < 2; v++) {
                     const int x0 = v == 0 ? 0 : w - vw;
-                    for (int y = 0; y < h; y++)
+                    for (int y = 0; y < vh; y++)
                         memcpy(scratch_[0].data() + size_t(y) * vw, full_.data() + size_t(y) * w + x0, size_t(vw));
                     uint8_t *vd = v == 0 ? dst : const_cast<uint8_t *>(right->data);
                     int *ow = v == 0 ? &lw : &rw, *oh = v == 0 ? &lh : &rh;
-                    transform(scratch_, vw, h, rotate, flip_h, flip_v, vd, ow, oh);
+                    transform(scratch_, vw, vh, rotate, flip_h, flip_v, vd, ow, oh);
                 }
                 w = lw;
                 h = lh;
@@ -435,16 +445,20 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                     undecodable_.add();
                     return;
                 }
-                if (left_half)
+                if (left_half) {
                     usb::vive::keep_left_half(dst, w, h, &w);
+                    h = std::min(h, vive_crop_height_.load(std::memory_order_relaxed));   // Rows are contiguous.
+                }
             } else {
                 scratch_[0].resize(pool_pixels_);
                 if (!uvc::to_gray(format, data, size, fw, fh, scratch_[0].data(), pool_pixels_, &w, &h)) {
                     undecodable_.add();
                     return;
                 }
-                if (left_half)
+                if (left_half) {
                     usb::vive::keep_left_half(scratch_[0].data(), w, h, &w);
+                    h = std::min(h, vive_crop_height_.load(std::memory_order_relaxed));
+                }
                 transform(scratch_, w, h, rotate, flip_h, flip_v, dst, &w, &h);
             }
             if (want_preview) {

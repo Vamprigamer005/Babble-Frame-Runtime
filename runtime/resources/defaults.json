@@ -121,6 +121,7 @@
       "fps": 30,
       "tracker_flip_h": true,
       "stereo": false,
+      "vive_crop_height": 400,
       "cameras": {},
       "process_fps": 30,
       "tracking": true,
@@ -409,6 +410,14 @@
         "hint": "How many camera frames a second the mouth model looks at. Higher is smoother and uses more battery.",
         "unit": "Hz",
         "options": [15, 30, 60]
+      },
+      {
+        "id": "/sources/face/vive_crop_height",
+        "page": "mouth",
+        "label": "Vive Crop",
+        "hint": "How much of the Vive tracker's picture the mouth model sees, from the top. Cut the chin and collar off so the mouth fills the picture.",
+        "options": [400, 300, 240, 200],
+        "labels": ["Full", "Top 3/4", "Top 60%", "Top half"]
       },
       {
         "id": "/sources/mouth/process_fps",
