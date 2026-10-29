@@ -397,14 +397,6 @@
     "width_m": 1.6,
     "settings": [
       {
-        "id": "/face_model",
-        "page": "mouth",
-        "label": "Mouth Model",
-        "hint": "Mono is Babble's single-camera model. Stereo feeds both sensors of a Vive Facial Tracker to the two-camera model. Switching restarts tracking.",
-        "options": ["mono", "stereo"],
-        "labels": ["Mono", "Stereo"]
-      },
-      {
         "id": "/sources/face/process_fps",
         "page": "mouth",
         "label": "USB Camera Rate",
