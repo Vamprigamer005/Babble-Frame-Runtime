@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace babble::usb::vive {
 
@@ -33,5 +34,10 @@ bool activate(Device &dev, const uvc::Info &info, std::string *error);
 // Keeps the left sensor image of a w x h grayscale frame: the left half of each row, in place. It sets *out_w to
 // w / 2 and leaves the height alone.
 void keep_left_half(uint8_t *gray, int w, int h, int *out_w);
+
+// Makes a Vive frame look the way Baballonia's VFT capture makes it before its model sees it: a 5x5 Gaussian blur
+// and the tone curve out = 255 * (in / 2048) ^ (1 / 2.5), which darkens the bright, close-lit IR picture (255 maps
+// to 110). In place on a w x h grayscale image; tmp is a work buffer the call resizes.
+void babble_look(uint8_t *gray, int w, int h, std::vector<uint8_t> &tmp);
 
 }

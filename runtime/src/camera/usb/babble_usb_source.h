@@ -101,6 +101,9 @@ private:
     // A Vive tracker's sensor image is 200x400 with the mouth near the top; only the top rows go to the model, so
     // the chin and the collar below do not shrink the mouth. 400 keeps everything.
     std::atomic<int> vive_crop_height_{400};
+    // Blur and tone-map the Vive frames the way Baballonia does before its model (see usb::vive::babble_look).
+    std::atomic<bool> vive_tone_{true};
+    std::vector<uint8_t> tone_tmp_;   // Camera thread only.
     nlohmann::json cameras_;       // The "cameras" settings, which only the main thread uses.
     usb::Found active_dev_;        // The camera that streams, which the main thread sets on start.
     uvc::Mode active_mode_;        // The mode that the streaming camera was asked for.

@@ -74,6 +74,7 @@ BabbleUsbSource::BabbleUsbSource(const nlohmann::json &cfg, SourceDeps deps)
       fps_(cfg.value("fps", 30.0)), tracker_flip_h_(cfg.value("tracker_flip_h", true)),
       stereo_(cfg.value("stereo", false)),
       vive_crop_height_(std::clamp(cfg.value("vive_crop_height", 400), 50, 400)),
+      vive_tone_(cfg.value("vive_tone", true)),
       cameras_(cfg.contains("cameras") && cfg["cameras"].is_object() ? cfg["cameras"] : nlohmann::json::object()),
       limiter_(cfg.value("process_fps", 30.0)) {
     const auto backoff = cfg.value("reopen_backoff_ms", nlohmann::json::object());
@@ -209,6 +210,11 @@ bool BabbleUsbSource::set_camera_option(const std::string &key, const nlohmann::
 bool BabbleUsbSource::set_option(const std::string &key, const nlohmann::json &value) {
     if (key.starts_with("cameras/"))
         return set_camera_option(key.substr(8), value);
+    if (key == "vive_tone" && value.is_boolean()) {
+        vive_tone_.store(value.get<bool>(), std::memory_order_relaxed);
+        LOG.info("%s: Vive tracker tone curve %s", name_.c_str(), value.get<bool>() ? "on" : "off");
+        return true;
+    }
     if (key == "vive_crop_height" && value.is_number()) {
         const int h = int(value.get<double>());
         if (h < 50 || h > 400)
@@ -404,6 +410,7 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
             uint8_t *dst = const_cast<uint8_t *>(frame->data);
             const int rotate = rotate_.load(std::memory_order_relaxed);
             const bool flip_h = flip_h_.load(std::memory_order_relaxed), flip_v = flip_v_.load(std::memory_order_relaxed);
+            const bool tone = vive_tone_.load(std::memory_order_relaxed);
             std::shared_ptr<Frame> right;   // Only in stereo mode.
             if (stereo_) {
                 // Decode the whole frame, then make a left and a right view: the two halves of a Vive tracker frame,
@@ -426,6 +433,8 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                     const int x0 = v == 0 ? 0 : w - vw;
                     for (int y = 0; y < vh; y++)
                         memcpy(scratch_[0].data() + size_t(y) * vw, full_.data() + size_t(y) * w + x0, size_t(vw));
+                    if (left_half && tone)
+                        usb::vive::babble_look(scratch_[0].data(), vw, vh, tone_tmp_);
                     uint8_t *vd = v == 0 ? dst : const_cast<uint8_t *>(right->data);
                     int *ow = v == 0 ? &lw : &rw, *oh = v == 0 ? &lh : &rh;
                     transform(scratch_, vw, vh, rotate, flip_h, flip_v, vd, ow, oh);
@@ -448,6 +457,8 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                 if (left_half) {
                     usb::vive::keep_left_half(dst, w, h, &w);
                     h = std::min(h, vive_crop_height_.load(std::memory_order_relaxed));   // Rows are contiguous.
+                    if (tone)
+                        usb::vive::babble_look(dst, w, h, tone_tmp_);
                 }
             } else {
                 scratch_[0].resize(pool_pixels_);
@@ -458,6 +469,8 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
                 if (left_half) {
                     usb::vive::keep_left_half(scratch_[0].data(), w, h, &w);
                     h = std::min(h, vive_crop_height_.load(std::memory_order_relaxed));
+                    if (tone)
+                        usb::vive::babble_look(scratch_[0].data(), w, h, tone_tmp_);
                 }
                 transform(scratch_, w, h, rotate, flip_h, flip_v, dst, &w, &h);
             }

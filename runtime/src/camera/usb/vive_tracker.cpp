@@ -7,6 +7,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <thread>
@@ -246,6 +247,53 @@ bool activate(Device &dev, const uvc::Info &info, std::string *error) {
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     LOG.info("vive: sensor set up and stream turned on");
     return true;
+}
+
+namespace {
+
+// The tone curve of Baballonia's VFTCommon: 255 * (i / 2048) ^ (1 / 2.5), as a lookup table.
+const std::array<uint8_t, 256> &tone_lut() {
+    static const std::array<uint8_t, 256> lut = [] {
+        std::array<uint8_t, 256> t{};
+        for (int i = 0; i < 256; i++)
+            t[size_t(i)] = uint8_t(std::pow(i / 2048.0, 1.0 / 2.5) * 255.0);
+        return t;
+    }();
+    return lut;
+}
+
+}
+
+void babble_look(uint8_t *gray, int w, int h, std::vector<uint8_t> &tmp) {
+    if (w < 5 || h < 5)
+        return;
+    // OpenCV's GaussianBlur with a 5x5 kernel and sigma 0 uses the fixed kernel [1 4 6 4 1] / 16, separably, with
+    // reflected borders.
+    static constexpr int k[5] = {1, 4, 6, 4, 1};
+    auto reflect = [](int i, int n) { return i < 0 ? -i : i >= n ? 2 * n - i - 2 : i; };
+    tmp.resize(size_t(w) * h);
+    // Horizontal pass into tmp.
+    for (int y = 0; y < h; y++) {
+        const uint8_t *row = gray + size_t(y) * w;
+        uint8_t *out = tmp.data() + size_t(y) * w;
+        for (int x = 0; x < w; x++) {
+            int sum = 0;
+            for (int t = -2; t <= 2; t++)
+                sum += k[t + 2] * row[reflect(x + t, w)];
+            out[x] = uint8_t((sum + 8) >> 4);
+        }
+    }
+    // Vertical pass back into gray, with the tone curve applied to the result.
+    const auto &lut = tone_lut();
+    for (int y = 0; y < h; y++) {
+        uint8_t *out = gray + size_t(y) * w;
+        for (int x = 0; x < w; x++) {
+            int sum = 0;
+            for (int t = -2; t <= 2; t++)
+                sum += k[t + 2] * tmp[size_t(reflect(y + t, h)) * w + x];
+            out[x] = lut[size_t((sum + 8) >> 4)];
+        }
+    }
 }
 
 void keep_left_half(uint8_t *gray, int w, int h, int *out_w) {

@@ -4,6 +4,8 @@
 #include "camera/usb/uvc.h"
 #include "camera/usb/vive_tracker.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -69,4 +71,20 @@ TEST_CASE("uvc: parse_config lists the Extension Units of the control interface"
     REQUIRE(info->formats[0].frames.size() == 1);
     CHECK(info->formats[0].frames[0].width == 400);
     CHECK(info->formats[0].frames[0].height == 400);
+}
+
+TEST_CASE("vive: babble_look applies Baballonia's tone curve and keeps a flat image flat") {
+    const int w = 8, h = 6;
+    std::vector<uint8_t> px(size_t(w) * h, 255), tmp;
+    usb::vive::babble_look(px.data(), w, h, tmp);
+    for (uint8_t v : px)
+        CHECK(v == 110);   // 255 * (255 / 2048) ^ 0.4 = 110.8, truncated as Baballonia's byte cast does
+    std::fill(px.begin(), px.end(), 0);
+    usb::vive::babble_look(px.data(), w, h, tmp);
+    for (uint8_t v : px)
+        CHECK(v == 0);
+    std::fill(px.begin(), px.end(), 64);
+    usb::vive::babble_look(px.data(), w, h, tmp);
+    for (uint8_t v : px)
+        CHECK(v == uint8_t(std::pow(64 / 2048.0, 0.4) * 255.0));
 }

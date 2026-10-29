@@ -122,6 +122,7 @@
       "tracker_flip_h": true,
       "stereo": false,
       "vive_crop_height": 400,
+      "vive_tone": true,
       "cameras": {},
       "process_fps": 30,
       "tracking": true,
@@ -359,7 +360,7 @@
     "repo": "Vamprigamer005/Babble-Frame-Runtime",
     "api_url": "https://api.github.com/repos/{repo}/releases?per_page=30",
     "prereleases": "auto",
-    "check_hours": 6
+    "check_hours": 1
   },
   "capture": {
     "app": {
@@ -410,6 +411,12 @@
         "hint": "How many camera frames a second the mouth model looks at. Higher is smoother and uses more battery.",
         "unit": "Hz",
         "options": [15, 30, 60]
+      },
+      {
+        "id": "/sources/face/vive_tone",
+        "page": "mouth",
+        "label": "Vive Tone Curve",
+        "hint": "Darkens and softens the Vive tracker's picture the way Babble's PC app does before its model. Turn off to feed the raw picture."
       },
       {
         "id": "/sources/face/vive_crop_height",
