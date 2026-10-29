@@ -403,6 +403,14 @@
         "labels": ["Mono", "Stereo"]
       },
       {
+        "id": "/sources/face/process_fps",
+        "page": "mouth",
+        "label": "USB Camera Rate",
+        "hint": "How many camera frames a second the mouth model looks at. Higher is smoother and uses more battery.",
+        "unit": "Hz",
+        "options": [15, 30, 60]
+      },
+      {
         "id": "/sources/mouth/process_fps",
         "page": "mouth",
         "label": "Mouth Tracking Rate",
