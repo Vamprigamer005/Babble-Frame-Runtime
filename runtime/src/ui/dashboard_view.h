@@ -143,7 +143,7 @@ struct CaptureRow {
 
 // A runtime update that the front page shows as a pill next to the version.
 struct UpdateNotice {
-    enum class State { Hidden, Available, Downloading, Installing, RestartNeeded, Failed };
+    enum class State { Hidden, Idle, Checking, UpToDate, Available, Downloading, Installing, RestartNeeded, Failed };
     State state = State::Hidden;
     std::string version{}, detail{};   // The detail is the failure message.
     float progress = 0;                // The download progress, from 0 to 1.

@@ -640,6 +640,18 @@ void DashboardView::render_update_pill(Canvas &c, float x, float baseline, const
     bool primary = true, clickable = true;
     switch (u.state) {
     case S::Hidden: return;
+    case S::Idle:
+        text = "Check for updates";
+        primary = false;
+        break;
+    case S::Checking:
+        text = "Checking for updates...";
+        primary = clickable = false;
+        break;
+    case S::UpToDate:
+        text = "Up to date \u00b7 Check again";
+        primary = false;
+        break;
     case S::Available: text = "Update to " + u.version; break;
     case S::Downloading:
         snprintf(pct, sizeof(pct), "Downloading %.0f%% \u00b7 Cancel", double(u.progress) * 100.0);

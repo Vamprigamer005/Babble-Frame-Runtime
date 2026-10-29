@@ -1149,6 +1149,7 @@ int main(int argc, char **argv) {
     updater.start();
     const uint64_t update_check_ns = uint64_t(std::max(1.0, update_cfg.value("check_hours", 6.0)) * 3600e9);
     uint64_t update_check_at = mono_ns() + 60'000'000'000ull;
+    bool install_after_check = false;   // Set by the Check for updates pill.
     std::optional<AppLauncher> capture_app;
     std::string capture_app_entry;   // The entry that capture_app uses.
     capture::Server capture_server(capture_backend);
@@ -1350,11 +1351,28 @@ int main(int argc, char **argv) {
             if (dashboard->take_update_request()) {
                 using U = update::RuntimeUpdater::State;
                 switch (updater.snapshot().state) {
+                case U::Idle:
+                case U::UpToDate:
+                    // The pill checks now and installs what it finds, without waiting for the next timed check.
+                    updater.check();
+                    update_check_at = now + update_check_ns;
+                    install_after_check = true;
+                    break;
                 case U::Available: updater.install(); break;
                 case U::Downloading: updater.cancel(); break;
                 case U::Installed: updater.restart_steamvr(); break;
                 case U::Failed: updater.install(); break;   // This checks again first if no release was found.
                 default: break;
+                }
+            }
+            if (install_after_check) {
+                using U = update::RuntimeUpdater::State;
+                const auto st = updater.snapshot().state;
+                if (st == U::Available) {
+                    updater.install();
+                    install_after_check = false;
+                } else if (st != U::Checking) {
+                    install_after_check = false;   // Up to date, or the check failed.
                 }
             }
             using CaptureAction = ui::DashboardView::ClickResult::CaptureAction;
@@ -1554,6 +1572,9 @@ int main(int argc, char **argv) {
                 n.detail = up.detail;
                 n.progress = up.progress;
                 switch (up.state) {
+                case U::Idle: n.state = N::Idle; break;
+                case U::Checking: n.state = N::Checking; break;
+                case U::UpToDate: n.state = N::UpToDate; break;
                 case U::Available: n.state = N::Available; break;
                 case U::Downloading: n.state = N::Downloading; break;
                 case U::Installing: n.state = N::Installing; break;
