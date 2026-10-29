@@ -55,12 +55,10 @@ endforeach()
 
 # Package only the runtime resources and models that the pipelines of the profile load.
 set(runtime_res ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/resources)
-set(BABBLE_PACKAGED_MODELS eye_kit_stage1_fp16.pte eye_kit_stage2_fp16.pte face_mono_224_fp16.pte)
-set(BABBLE_PACKAGED_FILES)
-if(BABBLE_FRUNK_MOUTH)
-    list(APPEND BABBLE_PACKAGED_MODELS fusionnet_int8_xnnpack_qat_linear.pte)
-    list(APPEND BABBLE_PACKAGED_FILES calibration_mouth.json)
-endif()
+# FusionNet and its calibration ship in every profile for the USB stereo mouth model (see runtime/CMakeLists.txt).
+set(BABBLE_PACKAGED_MODELS eye_kit_stage1_fp16.pte eye_kit_stage2_fp16.pte face_mono_224_fp16.pte
+    fusionnet_int8_xnnpack_qat_linear.pte)
+set(BABBLE_PACKAGED_FILES calibration_mouth.json)
 set(BABBLE_RESOURCE_COMMANDS
     # Remove the old folder so that no file from a different profile stays.
     COMMAND ${CMAKE_COMMAND} -E rm -rf ${BABBLE_OUT}/resources/runtime

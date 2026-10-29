@@ -387,6 +387,20 @@ int main(int argc, char **argv) {
         eye_server.start(thread_spec(threads, ec.value("thread", "eyesrv"), "bbl-eyesrv"), o, &stats);
     }
 
+    // The Mouth Model setting picks the single-view (face) or the two-view (face_stereo) pipeline for the USB
+    // camera, and tells the source to send two views. A change at run time restarts the runtime (see below).
+    {
+        const bool stereo = cfg.value("face_model", "mono") == "stereo";
+        if (cfg.contains("pipelines") && cfg["pipelines"].contains("face"))
+            cfg["pipelines"]["face"]["enabled"] = !stereo;
+        if (cfg.contains("pipelines") && cfg["pipelines"].contains("face_stereo"))
+            cfg["pipelines"]["face_stereo"]["enabled"] = stereo;
+        if (cfg.contains("sources") && cfg["sources"].contains("face"))
+            cfg["sources"]["face"]["stereo"] = stereo;
+        LOG.info("mouth model: %s", stereo ? "stereo (FusionNet, two views)" : "mono (Babble face)");
+    }
+    bool restart_for_face_model = false;   // Set when the Mouth Model setting changes; the driver restarts the runtime.
+
     // Each configured source has one output slot, and pipelines find their slot by name.
     const json scfg = cfg.value("sources", json::object());
     std::map<std::string, std::unique_ptr<LatestSlot<StereoFrame>>> slots;
@@ -829,6 +843,12 @@ int main(int argc, char **argv) {
         }
         if (id == "/dashboard/enabled" && value.is_boolean()) {
             set_dashboard(value.get<bool>());
+            applied = true;
+        }
+        if (id == "/face_model" && (value == "mono" || value == "stereo")) {
+            // The pipelines are built at start, so the setting is saved and the runtime restarts to use it.
+            LOG.info("mouth model set to %s; restarting to apply", value.get<std::string>().c_str());
+            restart_for_face_model = true;
             applied = true;
         }
         if (!applied) {
@@ -1308,11 +1328,11 @@ int main(int argc, char **argv) {
             }
             if (dashboard->take_diagnostics_request())
                 last_diagnostics = write_diagnostics("the Babble tab").string();
-            if (dashboard->take_restart_request()) {
+            if (dashboard->take_restart_request() || restart_for_face_model) {
                 // Exit cleanly so that the driver shim starts the runtime again.
                 if (!shim)
                     LOG.warn("restart requested, but no driver shim is supervising this runtime: it will just exit");
-                exit_reason = "restart requested from the Babble tab";
+                exit_reason = restart_for_face_model ? "mouth model changed" : "restart requested from the Babble tab";
                 running = false;
             }
             if (dashboard->take_capture_check_request() && !installer.snapshot().busy() &&

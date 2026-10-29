@@ -94,6 +94,10 @@ private:
     uint16_t width_ = 240, height_ = 240;
     double fps_ = 30;
     bool tracker_flip_h_ = true;   // The default horizontal flip of the Babble tracker.
+    // Stereo sends a left and a right frame: the two sensor images of a Vive Facial Tracker, or the same image
+    // twice for a camera that has only one, for a two-view mouth model. Set at start; a change restarts the runtime.
+    bool stereo_ = false;
+    std::vector<uint8_t> full_;    // The whole decoded frame in stereo mode, before it is split. Camera thread only.
     nlohmann::json cameras_;       // The "cameras" settings, which only the main thread uses.
     usb::Found active_dev_;        // The camera that streams, which the main thread sets on start.
     uvc::Mode active_mode_;        // The mode that the streaming camera was asked for.

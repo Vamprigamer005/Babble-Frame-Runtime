@@ -78,7 +78,7 @@ function(babble_profile_generate src_dir out_dir)
         # A release ships every output module, but not the local OSC sender, the visualizer or the camera stream.
         string(JSON defaults SET "${defaults}" sinks vrcft enabled false)
         string(JSON defaults REMOVE "${defaults}" visualizer)
-        babble_json_remove_where(defaults id /sinks/camera_stream/active dashboard settings)
+        # The fork keeps the camera stream switch on the Diagnostics page, to look at the Vive tracker's frames.
     endif()
 
     file(WRITE ${out_dir}/defaults.json "${defaults}")

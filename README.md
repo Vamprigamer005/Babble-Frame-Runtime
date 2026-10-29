@@ -75,6 +75,11 @@ left of the tracker's two side-by-side sensor images to the mouth model, as the 
   of the Babble tab, where rotation and flips can be set if the picture is the wrong way up.
 - Versions follow the [finaea fork](https://github.com/finaea/Babble-Frame-Runtime) scheme: `V1.2 Release 101` is
   the first fork build on upstream `V1.2 Release`. The updater in the Babble tab follows this fork's releases.
+- **Mouth Model** on the Babble tab's mouth page picks the model: *Mono* is Babble's single-camera face model;
+  *Stereo* feeds both sensor images of the Vive tracker to the two-view FusionNet model (shipped in every build of
+  this fork). Switching restarts the runtime.
+- The Diagnostics page keeps the **Camera Stream** switch, so a PC on the headset's network can grab the tracker's
+  frames from TCP 9099 (the stream's wire format is in `runtime/src/sink/camera_stream_sink.h`).
 - The fork keeps itself current: the `Sync upstream` workflow checks for new upstream releases every six hours,
   merges each one into `main` and publishes a fork build of it, so updates arrive in the Babble tab as usual. Only
   a merge conflict needs a person.

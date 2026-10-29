@@ -102,10 +102,13 @@ if(BABBLE_FRUNK_MOUTH)
         src/camera/mouth/exposure_controller.cpp
         src/camera/mouth/frame_mouth_source.cpp
         src/platform/camera_arbiter_client.cpp
-        src/platform/media_graph.cpp
-        src/model/fusionnet_mouth.cpp
-        src/model/postprocess/mouth_post.cpp)
+        src/platform/media_graph.cpp)
 endif()
+# The two-view mouth model (FusionNet) is in every profile: a USB stereo source such as the Vive Facial Tracker
+# can feed it (the fork's "stereo" mouth model).
+target_sources(babble_core PRIVATE
+    src/model/fusionnet_mouth.cpp
+    src/model/postprocess/mouth_post.cpp)
 # Make the profile flags PUBLIC so that all targets see the same values.
 target_compile_definitions(babble_core PUBLIC
     BABBLE_FRUNK_MOUTH=$<BOOL:${BABBLE_FRUNK_MOUTH}> BABBLE_DEV_FEATURES=$<BOOL:${BABBLE_DEV_FEATURES}>)

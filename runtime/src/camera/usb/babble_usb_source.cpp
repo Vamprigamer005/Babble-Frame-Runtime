@@ -72,6 +72,7 @@ BabbleUsbSource::BabbleUsbSource(const nlohmann::json &cfg, SourceDeps deps)
       vendor_(hex_id(cfg, "vendor", 0x303a)), product_(hex_id(cfg, "product", 0x8000)),
       width_(cfg.value("width", uint16_t(240))), height_(cfg.value("height", uint16_t(240))),
       fps_(cfg.value("fps", 30.0)), tracker_flip_h_(cfg.value("tracker_flip_h", true)),
+      stereo_(cfg.value("stereo", false)),
       cameras_(cfg.contains("cameras") && cfg["cameras"].is_object() ? cfg["cameras"] : nlohmann::json::object()),
       limiter_(cfg.value("process_fps", 30.0)) {
     const auto backoff = cfg.value("reopen_backoff_ms", nlohmann::json::object());
@@ -394,7 +395,42 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
             uint8_t *dst = const_cast<uint8_t *>(frame->data);
             const int rotate = rotate_.load(std::memory_order_relaxed);
             const bool flip_h = flip_h_.load(std::memory_order_relaxed), flip_v = flip_v_.load(std::memory_order_relaxed);
-            if (!rotate && !flip_h && !flip_v) {
+            std::shared_ptr<Frame> right;   // Only in stereo mode.
+            if (stereo_) {
+                // Decode the whole frame, then make a left and a right view: the two halves of a Vive tracker frame,
+                // or the whole image twice for another camera.
+                full_.resize(pool_pixels_);
+                if (!uvc::to_gray(format, data, size, fw, fh, full_.data(), pool_pixels_, &w, &h)) {
+                    undecodable_.add();
+                    return;
+                }
+                right = pool_->acquire();
+                if (!right) {
+                    pool_exhausted_.add();
+                    return;
+                }
+                const int vw = left_half ? w / 2 : w;
+                scratch_[0].resize(pool_pixels_);
+                int lw = 0, lh = 0, rw = 0, rh = 0;
+                for (int v = 0; v < 2; v++) {
+                    const int x0 = v == 0 ? 0 : w - vw;
+                    for (int y = 0; y < h; y++)
+                        memcpy(scratch_[0].data() + size_t(y) * vw, full_.data() + size_t(y) * w + x0, size_t(vw));
+                    uint8_t *vd = v == 0 ? dst : const_cast<uint8_t *>(right->data);
+                    int *ow = v == 0 ? &lw : &rw, *oh = v == 0 ? &lh : &rh;
+                    transform(scratch_, vw, h, rotate, flip_h, flip_v, vd, ow, oh);
+                }
+                w = lw;
+                h = lh;
+                right->origin = FrameOrigin::Face;
+                right->fmt = PixelFormat::Gray8;
+                right->width = uint32_t(rw);
+                right->height = uint32_t(rh);
+                right->stride = uint32_t(rw);
+                right->size = size_t(rw) * size_t(rh);
+                right->capture_ns = now;
+                right->arrival_ns = now;
+            } else if (!rotate && !flip_h && !flip_v) {
                 if (!uvc::to_gray(format, data, size, fw, fh, dst, pool_pixels_, &w, &h)) {
                     undecodable_.add();
                     return;
@@ -427,6 +463,10 @@ void BabbleUsbSource::run(usb::Found dev, uvc::Mode mode) {
             frame->seq = ++seq;
             StereoFrame sf;
             sf.left = std::move(frame);
+            if (right) {
+                right->seq = seq;
+                sf.right = std::move(right);
+            }
             sf.capture_ns = now;
             if (want_tap)
                 tap->tap_frames(name_, sf);

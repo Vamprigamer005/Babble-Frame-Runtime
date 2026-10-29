@@ -7,9 +7,7 @@
 #include "model/null_pipeline.h"
 #include "model/steamvr_gaze.h"
 #include "sink/sink.h"
-#if BABBLE_FRUNK_MOUTH
 #include "model/fusionnet_mouth.h"
-#endif
 
 #include <chrono>
 
@@ -26,10 +24,8 @@ const std::string &IPipeline::source() const {
 
 std::unique_ptr<IPipeline> make_pipeline(const nlohmann::json &cfg, PipelineDeps deps) {
     const std::string type = cfg.value("type", "null");
-#if BABBLE_FRUNK_MOUTH
     if (type == "fusionnet_mouth")
         return std::make_unique<FusionNetMouth>(cfg, std::move(deps));
-#endif
     if (type == "babble_mono_face")
         return std::make_unique<BabbleMonoFace>(cfg, std::move(deps));
     if (type == "babble_eye")

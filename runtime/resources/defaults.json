@@ -6,6 +6,7 @@
   "stats_interval_s": 5,
   "stats_summary_s": 60,
   "mouth_source": "frunk",
+  "face_model": "mono",
   "outputs": { "vrcft": true, "vrc_native": false, "babble_osc": false },
   "pc_address": "",
   "threads": {
@@ -119,6 +120,7 @@
       "height": 240,
       "fps": 30,
       "tracker_flip_h": true,
+      "stereo": false,
       "cameras": {},
       "process_fps": 30,
       "tracking": true,
@@ -206,6 +208,20 @@
       "flip": "none",
       "one_euro": { "min_cutoff": 0.5, "beta": 3.0, "d_cutoff": 1.0 },
       "calibration": { "mode": "auto" }
+    },
+    "face_stereo": {
+      "type": "fusionnet_mouth",
+      "enabled": false,
+      "from": "face",
+      "thread": "infM",
+      "model": "fusionnet_int8_xnnpack_qat_linear.pte",
+      "swap": false,
+      "flip": "none",
+      "rotate": 0,
+      "interp": "linear",
+      "probe_orientation": 90,
+      "one_euro": { "min_cutoff": 0.5, "beta": 3.0, "d_cutoff": 1.0 },
+      "calibration": { "mode": "auto", "file": "calibration_mouth.json" }
     }
   },
   "sinks": {
@@ -378,6 +394,14 @@
     "enabled": true,
     "width_m": 1.6,
     "settings": [
+      {
+        "id": "/face_model",
+        "page": "mouth",
+        "label": "Mouth Model",
+        "hint": "Mono is Babble's single-camera model. Stereo feeds both sensors of a Vive Facial Tracker to the two-camera model. Switching restarts tracking.",
+        "options": ["mono", "stereo"],
+        "labels": ["Mono", "Stereo"]
+      },
       {
         "id": "/sources/mouth/process_fps",
         "page": "mouth",
