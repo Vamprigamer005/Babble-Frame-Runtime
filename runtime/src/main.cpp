@@ -390,7 +390,9 @@ int main(int argc, char **argv) {
     // The Mouth Model setting picks the single-view (face) or the two-view (face_stereo) pipeline for the USB
     // camera, and tells the source to send two views. A change at run time restarts the runtime (see below).
     {
-        const bool stereo = cfg.value("face_model", "mono") == "stereo";
+        // The stereo path is an experiment: it needs both face_model "stereo" and face_model_experiment true in
+        // settings.json, so a "stereo" that an earlier Babble tab switch saved does not stay in force on its own.
+        const bool stereo = cfg.value("face_model", "mono") == "stereo" && cfg.value("face_model_experiment", false);
         if (cfg.contains("pipelines") && cfg["pipelines"].contains("face"))
             cfg["pipelines"]["face"]["enabled"] = !stereo;
         if (cfg.contains("pipelines") && cfg["pipelines"].contains("face_stereo"))
