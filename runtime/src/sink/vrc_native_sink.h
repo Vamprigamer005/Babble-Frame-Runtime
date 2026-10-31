@@ -31,7 +31,7 @@ using Blob = std::array<uint8_t, kBlobSize>;
 
 // The position of a signal in the blob, with the same signal names as the osc sink.
 struct Target {
-    enum Kind : uint8_t { None, Shapes, LeftX, LeftY, RightX, RightY, LeftOpen, RightOpen };
+    enum Kind : uint8_t { None, Shapes, LeftX, LeftY, RightX, RightY, LeftOpen, RightOpen, LeftPupil, RightPupil };
     Kind kind = None;
     std::vector<uint8_t> shapes;   // The Unified Expressions indices for the Shapes kind.
 };

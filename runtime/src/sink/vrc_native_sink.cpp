@@ -109,6 +109,12 @@ const std::map<std::string_view, std::vector<uint8_t>> &shape_table() {
 // Clamp and truncate the value the same way as VRCFT.
 uint8_t to_byte(float v) { return uint8_t(std::clamp(v, 0.0f, 1.0f) * 255.0f); }
 
+// Mimic how VRCFT send's dilation
+float pupil_weight(float dilation) {
+    const float mm = 6.0f * std::clamp(dilation, 0.0f, 1.0f) + 2.0f;
+    return std::clamp(mm / 5.0f - 1.0f, -1.0f, 1.0f);
+}
+
 }
 
 Target target_of(std::string_view signal) {
@@ -119,6 +125,8 @@ Target target_of(std::string_view signal) {
     else if (signal == "RightEyeY") t.kind = Target::RightY;
     else if (signal == "LeftEyeLid") t.kind = Target::LeftOpen;
     else if (signal == "RightEyeLid") t.kind = Target::RightOpen;
+    else if (signal == "LeftEyeDilation") t.kind = Target::LeftPupil;
+    else if (signal == "RightEyeDilation") t.kind = Target::RightPupil;
     else if (auto it = shape_table().find(signal); it != shape_table().end()) {
         t.kind = Target::Shapes;
         t.shapes = it->second;
@@ -127,7 +135,7 @@ Target target_of(std::string_view signal) {
 }
 
 Blob encode(const std::vector<Target> &targets, const std::vector<std::optional<float>> &values) {
-    float lx = 0, ly = 0, rx = 0, ry = 0, lopen = 1, ropen = 1;
+    float lx = 0, ly = 0, rx = 0, ry = 0, lopen = 1, ropen = 1, lpupil = 0, rpupil = 0;
     std::array<float, kShapeCount> shapes{};
     for (size_t i = 0; i < targets.size() && i < values.size(); i++) {
         if (!values[i])
@@ -141,6 +149,8 @@ Blob encode(const std::vector<Target> &targets, const std::vector<std::optional<
         case Target::RightY: ry = v; break;
         case Target::LeftOpen: lopen = v; break;
         case Target::RightOpen: ropen = v; break;
+        case Target::LeftPupil: lpupil = pupil_weight(v); break;
+        case Target::RightPupil: rpupil = pupil_weight(v); break;
         case Target::Shapes:
             for (uint8_t s : targets[i].shapes)
                 shapes[s] = v;
@@ -158,6 +168,10 @@ Blob encode(const std::vector<Target> &targets, const std::vector<std::optional<
     b[7] = to_byte(-ly);
     b[8] = to_byte(1.0f - ropen);
     b[9] = to_byte(1.0f - lopen);
+    b[10] = to_byte(rpupil);    // EyeDilationRight
+    b[11] = to_byte(lpupil);    // EyeDilationLeft
+    b[12] = to_byte(-rpupil);   // EyeConstrictRight
+    b[13] = to_byte(-lpupil);   // EyeConstrictLeft
     for (size_t s = 0; s < kShapeCount; s++)
         b[kEyeBytes + s] = to_byte(shapes[s]);
     return b;
