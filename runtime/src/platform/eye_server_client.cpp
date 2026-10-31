@@ -4,6 +4,7 @@
 #include "core/log.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -137,6 +138,12 @@ std::optional<Sample> EyeServerClient::latest(uint64_t max_age_ns) const {
     return latest_;
 }
 
+bool EyeServerClient::wait_newer(uint64_t seq, uint64_t timeout_ns) const {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return newer_.wait_for(lock, std::chrono::nanoseconds(timeout_ns),
+                           [&] { return latest_ && latest_->seq > seq; });
+}
+
 void EyeServerClient::set_listener(std::function<void(const Sample &)> fn) {
     std::lock_guard<std::mutex> lock(listener_mutex_);
     listener_ = std::move(fn);
@@ -246,6 +253,7 @@ bool EyeServerClient::read_one() {
         std::lock_guard<std::mutex> l(mutex_);
         latest_ = s;
     }
+    newer_.notify_all();
     {
         std::lock_guard<std::mutex> l(listener_mutex_);
         if (listener_)

@@ -193,6 +193,10 @@
       "roll_offset": 0,
       "stale_s": 0.5,
       "smoothing": 0,
+      "prediction": 0,
+      "prediction_ms": [10, 20, 35],
+      "prediction_max": 0.25,
+      "instant": true,
       "smoothing_presets": [
         { "min_cutoff": 3.0, "beta": 0.5, "d_cutoff": 1.0 },
         { "min_cutoff": 1.5, "beta": 0.3, "d_cutoff": 1.0 },
@@ -442,6 +446,20 @@
         "hint": "Steadies the gaze. Stronger smoothing adds a little lag to fast eye movements.",
         "options": [0, 1, 2, 3],
         "labels": ["Off", "Low", "Medium", "High"]
+      },
+      {
+        "id": "/pipelines/gaze/prediction",
+        "page": "eye",
+        "label": "Gaze Prediction",
+        "hint": "Sends where your eyes are about to be, to hide some of the eye tracker's lag. Higher hides more lag but can overshoot on fast eye flicks.",
+        "options": [0, 1, 2, 3],
+        "labels": ["Off", "Low", "Medium", "High"]
+      },
+      {
+        "id": "/pipelines/gaze/instant",
+        "page": "eye",
+        "label": "Instant Gaze",
+        "hint": "With Independent gaze, sends each new eye reading the moment it arrives instead of on the next timer tick."
       },
       {
         "id": "/pipelines/eye/openness_source",

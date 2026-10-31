@@ -175,3 +175,44 @@ TEST_CASE("parallel from a near fixation point does not converge, unlike convert
     CHECK((*par)[0] < (*conv)[0]);
     CHECK((*par)[0] > (*conv)[1]);   // The shared direction lies between the two crossed eyes.
 }
+
+TEST_CASE("prediction: off passes values through, on leads a steady movement") {
+    gaze::Predictor p({0.010, 0.020, 0.035}, 0.25);
+    REQUIRE(p.levels() == 3);
+    float out[4];
+    // A gaze moving at 1.0 per second on every channel, sampled every 10 ms.
+    uint64_t t = 1'000'000'000ull;
+    for (int k = 0; k < 10; k++, t += 10'000'000ull) {
+        const float v = float(0.01 * k);
+        const float in[4] = {v, v, v, v};
+        p.apply(in, out, 0, t);
+        for (float o : out)
+            CHECK(o == doctest::Approx(v));   // Level 0 is off.
+    }
+    // Level 2 (20 ms) leads by about 0.02 once the speed estimate settles.
+    const float in[4] = {0.10f, 0.10f, 0.10f, 0.10f};
+    p.apply(in, out, 2, t);
+    CHECK(out[0] == doctest::Approx(0.10 + 0.02).epsilon(0.05));
+}
+
+TEST_CASE("prediction: a repeated sample keeps the speed, a still gaze is not moved, a jump is capped") {
+    gaze::Predictor p({0.020}, 0.25);
+    float out[4];
+    uint64_t t = 1'000'000'000ull;
+    const float a[4] = {0, 0, 0, 0};
+    p.apply(a, out, 1, t);
+    for (float o : out)
+        CHECK(o == 0.0f);   // No speed on the first sample.
+    // Still gaze: no movement means no prediction.
+    for (int k = 0; k < 5; k++)
+        p.apply(a, out, 1, t += 10'000'000ull);
+    CHECK(out[0] == doctest::Approx(0.0));
+    // A huge jump in 10 ms is capped at max_delta.
+    const float b[4] = {0.9f, 0.9f, 0.9f, 0.9f};
+    p.apply(b, out, 1, t += 10'000'000ull);
+    CHECK(out[0] <= 0.9f + 0.25f + 1e-6f);
+    // After a reset there is no speed again.
+    p.reset();
+    p.apply(b, out, 1, t += 10'000'000ull);
+    CHECK(out[0] == doctest::Approx(0.9));
+}

@@ -51,6 +51,25 @@ private:
     uint64_t last_ns_ = 0;
 };
 
+// Optional gaze prediction: estimates how fast each of the four gaze values is moving and sends where it will be a
+// little later, which hides part of the eye tracker's lag. Each level above 0 (off) has its own look-ahead time.
+class Predictor {
+public:
+    explicit Predictor(std::vector<double> lookahead_s = {}, double max_delta = 0.25)
+        : lookahead_s_(std::move(lookahead_s)), max_delta_(max_delta) {}
+    int levels() const { return int(lookahead_s_.size()); }
+    // Writes the predicted values to out. A sample equal to the last one keeps the speed estimate unchanged.
+    void apply(const float in[4], float out[4], int level, uint64_t now_ns);
+    void reset() { have_ = false; }
+
+private:
+    std::vector<double> lookahead_s_;
+    double max_delta_;
+    std::array<double, 4> prev_{}, vel_{};
+    uint64_t last_ns_ = 0;
+    bool have_ = false;
+};
+
 }
 
 // The "steamvr_gaze" pipeline gets eye gaze from the SteamVR eye tracking and sends it for each eye.
@@ -111,6 +130,10 @@ private:
     gaze::Smoother smoother_;
     std::atomic<int> smoothing_{0};
     std::atomic<bool> smoothing_reset_{false};
+    // Gaze prediction level (0 is off), and instant sending of each new eye-service sample in independent mode.
+    gaze::Predictor predictor_;
+    std::atomic<int> prediction_{0};
+    std::atomic<bool> instant_{true};
     bool stats_registered_ = false;
 };
 

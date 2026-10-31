@@ -136,6 +136,32 @@ void gaze::Smoother::apply(const float raw[4], float out[4], int level, uint64_t
     last_ns_ = now_ns;
 }
 
+void gaze::Predictor::apply(const float in[4], float out[4], int level, uint64_t now_ns) {
+    std::copy(in, in + 4, out);
+    bool same = have_;
+    for (int i = 0; same && i < 4; i++)
+        same = double(in[i]) == prev_[i];
+    if (!same) {   // A new sample: update the speed estimate.
+        const double dt = have_ ? double(now_ns - last_ns_) * 1e-9 : 0;
+        for (int i = 0; i < 4; i++) {
+            if (dt > 0 && dt < 0.1) {
+                const double v = (double(in[i]) - prev_[i]) / dt;
+                vel_[i] = 0.5 * vel_[i] + 0.5 * v;   // Average two samples so one noisy sample does not jump.
+            } else {
+                vel_[i] = 0;   // The first sample, or after a gap: no speed yet.
+            }
+            prev_[i] = in[i];
+        }
+        last_ns_ = now_ns;
+        have_ = true;
+    }
+    if (level <= 0 || level > levels())
+        return;
+    const double ahead = lookahead_s_[size_t(level - 1)];
+    for (int i = 0; i < 4; i++)
+        out[i] = float(in[i] + std::clamp(vel_[i] * ahead, -max_delta_, max_delta_));
+}
+
 bool SteamVrGaze::init() {
     if (!deps_.steamvr) {
         LOG.error("pipeline %s: needs the SteamVR client", name_.c_str());
@@ -176,6 +202,18 @@ bool SteamVrGaze::init() {
         return false;
     }
     smoothing_ = level;
+    std::vector<double> ahead;
+    for (const auto &ms : cfg_.value("prediction_ms", nlohmann::json::array()))
+        if (ms.is_number() && ms.get<double>() > 0)
+            ahead.push_back(ms.get<double>() / 1000.0);
+    predictor_ = gaze::Predictor(std::move(ahead), cfg_.value("prediction_max", 0.25));
+    const int pred = cfg_.value("prediction", 0);
+    if (pred < 0 || pred > predictor_.levels()) {
+        LOG.error("pipeline %s: prediction must be 0 to %d", name_.c_str(), predictor_.levels());
+        return false;
+    }
+    prediction_ = pred;
+    instant_ = cfg_.value("instant", true);
 
     const char *names[4] = {"LeftEyeX", "LeftEyeY", "RightEyeX", "RightEyeY"};
     for (int i = 0; i < 4; i++)
@@ -188,9 +226,10 @@ bool SteamVrGaze::init() {
     deps_.stats.add(p + "sample_age", &age_);
     deps_.stats.add(p + "repeats", &repeats_);
     stats_registered_ = true;
-    LOG.info("pipeline %s: SteamVR eye gaze at %.0f Hz, %s, %s convergence, %s scaling, smoothing %d", name_.c_str(),
-             cfg_.value("rate_hz", 90.0), independent_ ? "independent per-eye" : "combined",
-             parallel_ ? "parallel" : "fixation", scaling.c_str(), level);
+    LOG.info("pipeline %s: SteamVR eye gaze at %.0f Hz, %s, %s convergence, %s scaling, smoothing %d, prediction %d, "
+             "instant %s",
+             name_.c_str(), cfg_.value("rate_hz", 90.0), independent_ ? "independent per-eye" : "combined",
+             parallel_ ? "parallel" : "fixation", scaling.c_str(), level, pred, instant_ ? "on" : "off");
     return true;
 }
 
@@ -200,6 +239,20 @@ bool SteamVrGaze::set_option(const std::string &key, const nlohmann::json &value
             return false;
         if (value.get<int>() != smoothing_.exchange(value.get<int>()))
             LOG.info("pipeline %s: gaze smoothing %d", name_.c_str(), value.get<int>());
+        return true;
+    }
+    if (key == "prediction") {
+        if (!value.is_number_integer() || value.get<int>() < 0 || value.get<int>() > predictor_.levels())
+            return false;
+        if (value.get<int>() != prediction_.exchange(value.get<int>()))
+            LOG.info("pipeline %s: gaze prediction %d", name_.c_str(), value.get<int>());
+        return true;
+    }
+    if (key == "instant") {
+        if (!value.is_boolean())
+            return false;
+        if (value.get<bool>() != instant_.exchange(value.get<bool>()))
+            LOG.info("pipeline %s: instant gaze %s", name_.c_str(), value.get<bool>() ? "on" : "off");
         return true;
     }
     if (key == "convergence") {
@@ -244,9 +297,16 @@ void SteamVrGaze::publish(double lx, double ly, double rx, double ry, uint64_t n
         smoothing_reset_ = true;   // The gaze comes back from the centre without a slow glide.
         std::copy(raw, raw + 4, out);
     } else {
-        if (smoothing_reset_.exchange(false))
+        if (smoothing_reset_.exchange(false)) {
             smoother_.reset();
-        smoother_.apply(raw, out, smoothing_.load(), now);
+            predictor_.reset();
+        }
+        float smoothed[4];
+        smoother_.apply(raw, smoothed, smoothing_.load(), now);
+        predictor_.apply(smoothed, out, prediction_.load(), now);
+        if (scaling_ == gaze::Scaling::Angle)   // Angle values are limited to +-1 (+-max_deg).
+            for (float &v : out)
+                v = std::clamp(v, -1.0f, 1.0f);
     }
     std::pair<SignalId, Signal> u[4] = {{ids_[0], {out[0], 1.0f, now}},
                                         {ids_[1], {out[1], 1.0f, now}},
@@ -391,7 +451,12 @@ void SteamVrGaze::run() {
             centre(now);
             centred = true;
         }
-        sleep_ns(period);
+        // In independent mode, send each eye-service sample as soon as it arrives instead of on the next tick.
+        // The period is still the longest wait, so the stale check and setting changes keep running.
+        if (instant_ && used == Using::Independent)
+            deps_.eye_server->wait_newer(last_seq_, period);
+        else
+            sleep_ns(period);
     }
 }
 
