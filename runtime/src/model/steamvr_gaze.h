@@ -30,6 +30,11 @@ std::optional<std::array<double, 3>> convert(double x, double y, double z, doubl
 std::optional<std::array<double, 2>> from_direction(double x, double y, double z, double max_deg, bool flip_y,
                                                     const Offsets &off, Scaling scaling = Scaling::Angle);
 
+// One direction for both eyes: the mean of the two unit eye directions, so the eyes stay parallel.
+std::optional<std::array<double, 2>> parallel(const std::array<float, 3> &l, const std::array<float, 3> &r,
+                                              double max_deg, bool flip_y, const Offsets &off,
+                                              Scaling scaling = Scaling::Angle);
+
 // The optional One Euro smoothing of the four gaze values, with one preset for each level above 0 (off).
 class Smoother {
 public:
@@ -74,6 +79,9 @@ private:
     std::string feed_;
     std::atomic<bool> tracking_{true};   // When this is false, the pipeline centres the gaze one time and stops.
     std::atomic<bool> independent_{true};   // This is true if gaze_source is "independent".
+    // When this is true, both eyes get one direction (the gaze from the head centre) instead of each eye aiming at
+    // the fixation point. A short or noisy fixation depth then cannot cross the eyes.
+    std::atomic<bool> parallel_{false};
 
     // Each tick function returns true if it published a valid sample.
     bool tick_independent(uint64_t now);
@@ -89,6 +97,11 @@ private:
 
     RateStat samples_;
     Counter invalid_, reconnects_, fallback_;
+    // Diagnostics for independent gaze: how old each eye-service sample is when it is sent (one clock, mono_ns on
+    // the headset), and how many ticks sent a sample that was already sent because no new one had come.
+    LatencyStat age_;
+    Counter repeats_;
+    uint64_t last_seq_ = 0;
     double max_deg_ = 45, stale_ns_ = 5e8;
     bool flip_y_ = false;
     gaze::Scaling scaling_ = gaze::Scaling::Angle;

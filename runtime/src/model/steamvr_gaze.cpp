@@ -71,6 +71,17 @@ std::optional<std::array<double, 2>> from_direction(double x, double y, double z
     return std::array<double, 2>{scale(std::atan2(x, z), max_deg, scaling), scale(std::atan2(y, z), max_deg, scaling)};
 }
 
+std::optional<std::array<double, 2>> parallel(const std::array<float, 3> &l, const std::array<float, 3> &r,
+                                              double max_deg, bool flip_y, const Offsets &off, Scaling scaling) {
+    const double nl = std::sqrt(double(l[0]) * l[0] + double(l[1]) * l[1] + double(l[2]) * l[2]);
+    const double nr = std::sqrt(double(r[0]) * r[0] + double(r[1]) * r[1] + double(r[2]) * r[2]);
+    if (nl < 1e-6 || nr < 1e-6)
+        return std::nullopt;
+    // Each eye counts the same, whatever the length of its vector.
+    return from_direction(l[0] / nl + r[0] / nr, l[1] / nl + r[1] / nr, l[2] / nl + r[2] / nr, max_deg, flip_y, off,
+                          scaling);
+}
+
 }
 
 SteamVrGaze::SteamVrGaze(const nlohmann::json &cfg, PipelineDeps deps)
@@ -93,6 +104,16 @@ std::optional<bool> parse_gaze_source(const nlohmann::json &v) {
     if (v == "independent")
         return true;
     if (v == "combined")
+        return false;
+    return std::nullopt;
+}
+
+std::optional<bool> parse_convergence(const nlohmann::json &v) {
+    if (!v.is_string())
+        return std::nullopt;
+    if (v == "parallel")
+        return true;
+    if (v == "fixation")
         return false;
     return std::nullopt;
 }
@@ -133,6 +154,12 @@ bool SteamVrGaze::init() {
         return false;
     }
     independent_ = *source;
+    auto parallel = parse_convergence(cfg_.value("convergence", nlohmann::json("fixation")));
+    if (!parallel) {
+        LOG.error("pipeline %s: convergence must be fixation or parallel", name_.c_str());
+        return false;
+    }
+    parallel_ = *parallel;
     scaling_ = scaling == "tangent" ? gaze::Scaling::Tangent : gaze::Scaling::Angle;
     max_deg_ = cfg_.value("max_deg", 45.0);
     flip_y_ = cfg_.value("flip_y", false);
@@ -158,9 +185,12 @@ bool SteamVrGaze::init() {
     deps_.stats.add(p + "invalid", &invalid_);
     deps_.stats.add(p + "reconnects", &reconnects_);
     deps_.stats.add(p + "fallback", &fallback_);
+    deps_.stats.add(p + "sample_age", &age_);
+    deps_.stats.add(p + "repeats", &repeats_);
     stats_registered_ = true;
-    LOG.info("pipeline %s: SteamVR eye gaze at %.0f Hz, %s, %s scaling, smoothing %d", name_.c_str(),
-             cfg_.value("rate_hz", 90.0), independent_ ? "independent per-eye" : "combined", scaling.c_str(), level);
+    LOG.info("pipeline %s: SteamVR eye gaze at %.0f Hz, %s, %s convergence, %s scaling, smoothing %d", name_.c_str(),
+             cfg_.value("rate_hz", 90.0), independent_ ? "independent per-eye" : "combined",
+             parallel_ ? "parallel" : "fixation", scaling.c_str(), level);
     return true;
 }
 
@@ -170,6 +200,16 @@ bool SteamVrGaze::set_option(const std::string &key, const nlohmann::json &value
             return false;
         if (value.get<int>() != smoothing_.exchange(value.get<int>()))
             LOG.info("pipeline %s: gaze smoothing %d", name_.c_str(), value.get<int>());
+        return true;
+    }
+    if (key == "convergence") {
+        auto parallel = parse_convergence(value);
+        if (!parallel)
+            return false;
+        if (*parallel != parallel_.exchange(*parallel)) {
+            smoothing_reset_ = true;
+            LOG.info("pipeline %s: gaze convergence %s", name_.c_str(), *parallel ? "parallel" : "fixation");
+        }
         return true;
     }
     if (key != "gaze_source")
@@ -229,9 +269,21 @@ bool SteamVrGaze::tick_independent(uint64_t now) {
             LOG.info("pipeline %s: Track Dominant Eye Only is on; both eyes follow the %s eye", name_.c_str(),
                      dominant_eye_ == eye_server::kLeftEye ? "left" : "right");
     }
+    if (s->seq == last_seq_)
+        repeats_.add();   // No new sample since the last tick; the same gaze is sent again.
+    last_seq_ = s->seq;
+    age_.add(now - s->received_ns);
     const bool one_eye = dominant_eye_ >= 0;
     const auto &l = one_eye ? s->gaze[dominant_eye_] : s->pre_fusion_gaze[eye_server::kLeftEye];
     const auto &r = one_eye ? s->gaze[dominant_eye_] : s->pre_fusion_gaze[eye_server::kRightEye];
+    if (parallel_ && !one_eye) {
+        auto g = gaze::parallel(l, r, max_deg_, flip_y_, off_, scaling_);
+        if (!g)
+            return false;
+        publish((*g)[0], (*g)[1], (*g)[0], (*g)[1], now);
+        samples_.tick();
+        return true;
+    }
     auto gl = gaze::from_direction(l[0], l[1], l[2], max_deg_, flip_y_, off_, scaling_);
     auto gr = gaze::from_direction(r[0], r[1], r[2], max_deg_, flip_y_, off_, scaling_);
     if (!gl || !gr)
@@ -281,6 +333,14 @@ bool SteamVrGaze::tick_combined(uint64_t now) {
     double p[3];
     for (int c = 0; c < 3; c++)
         p[c] = m[0][c] * t[0] + m[1][c] * t[1] + m[2][c] * t[2];
+    if (parallel_) {   // Both eyes look along the direction from the head centre to the fixation point.
+        auto d = gaze::from_direction(p[0], p[1], p[2], max_deg_, flip_y_, off_, scaling_);
+        if (!d)
+            return false;
+        publish((*d)[0], (*d)[1], (*d)[0], (*d)[1], now);
+        samples_.tick();
+        return true;
+    }
     auto g = gaze::convert(p[0], p[1], p[2], ipd, max_deg_, flip_y_, off_, scaling_);
     if (!g)
         return false;

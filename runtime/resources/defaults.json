@@ -181,6 +181,7 @@
       "enabled": true,
       "feed": "eye",
       "gaze_source": "independent",
+      "convergence": "parallel",
       "thread": "gaze",
       "rate_hz": 90,
       "ipd": "auto",
@@ -457,6 +458,14 @@
         "hint": "Independent lets each eye move on its own. Combined uses the single gaze of SteamVR.",
         "options": ["independent", "combined"],
         "labels": ["Independent", "Combined"]
+      },
+      {
+        "id": "/pipelines/gaze/convergence",
+        "page": "eye_sources",
+        "label": "Eye Convergence",
+        "hint": "Parallel points both eyes the same way, so a wrong focus distance cannot cross them. Fixation aims each eye at the point you look at, as Steam Link does.",
+        "options": ["parallel", "fixation"],
+        "labels": ["Parallel", "Fixation"]
       },
       {
         "id": "/pipelines/eye/combine_widen",
