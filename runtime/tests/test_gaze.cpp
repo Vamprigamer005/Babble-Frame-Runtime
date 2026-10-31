@@ -140,3 +140,38 @@ TEST_CASE("gaze smoothing is off at level 0, steadies a jump at a level, and sta
     sm.apply(rest, out, 3, 6 * step);   // A level without a preset is off.
     CHECK(out[0] == 0.0f);
 }
+
+
+TEST_CASE("parallel convergence: both eyes share one direction, never crossed") {
+    // Eyes that disagree (one 10 deg left, one 10 deg right of straight ahead) average to straight ahead.
+    const double a = 10.0 * M_PI / 180;
+    std::array<float, 3> l{float(std::sin(a)), 0.f, float(-std::cos(a))}, r{float(-std::sin(a)), 0.f, float(-std::cos(a))};
+    auto g = gaze::parallel(l, r, 45.0, false, {});
+    REQUIRE(g);
+    CHECK((*g)[0] == doctest::Approx(0.0).epsilon(1e-6));
+    CHECK((*g)[1] == doctest::Approx(0.0).epsilon(1e-6));
+    // Vector length does not weight an eye: a long left vector gives the same answer.
+    std::array<float, 3> l5{l[0] * 5, l[1] * 5, l[2] * 5};
+    auto g5 = gaze::parallel(l5, r, 45.0, false, {});
+    REQUIRE(g5);
+    CHECK((*g5)[0] == doctest::Approx((*g)[0]).epsilon(1e-6));
+    // Agreeing eyes 20 deg right give 20/45 in angle scaling, right positive.
+    const double b = 20.0 * M_PI / 180;
+    std::array<float, 3> e{float(std::sin(b)), 0.f, float(-std::cos(b))};
+    auto gr = gaze::parallel(e, e, 45.0, false, {});
+    REQUIRE(gr);
+    CHECK((*gr)[0] == doctest::Approx(20.0 / 45.0).epsilon(1e-6));
+    // A zero vector is invalid.
+    CHECK_FALSE(gaze::parallel({0, 0, 0}, r, 45.0, false, {}));
+}
+
+TEST_CASE("parallel from a near fixation point does not converge, unlike convert()") {
+    // A fixation point 0.3 m ahead and slightly right: convert() turns the eyes far toward each other.
+    auto conv = gaze::convert(0.1, 0.0, -0.3, 0.063, 45.0, false, {});
+    REQUIRE(conv);
+    CHECK((*conv)[0] - (*conv)[1] > 0.2);   // About 11 deg of crossing.
+    auto par = gaze::from_direction(0.1, 0.0, -0.3, 45.0, false, {});
+    REQUIRE(par);
+    CHECK((*par)[0] < (*conv)[0]);
+    CHECK((*par)[0] > (*conv)[1]);   // The shared direction lies between the two crossed eyes.
+}
