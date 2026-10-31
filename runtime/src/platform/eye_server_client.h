@@ -5,6 +5,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -94,6 +95,8 @@ public:
     bool available() const { return available_.load(); }
     // Returns the newest sample if it arrived within max_age_ns.
     std::optional<eye_server::Sample> latest(uint64_t max_age_ns) const;
+    // Waits until a sample with a seq above seq arrives, or timeout_ns passes. Returns true if one arrived.
+    bool wait_newer(uint64_t seq, uint64_t timeout_ns) const;
     // Sets a function that the reader thread calls for each sample, so the function must be fast.
     void set_listener(std::function<void(const eye_server::Sample &)> fn);
     // Returns the layout version of the open file, or 0 if no file is open.
@@ -123,6 +126,7 @@ private:
     int dominant_eye_ = -1;   // The last value of the setting that decoded, which only the reader thread uses.
 
     mutable std::mutex mutex_;
+    mutable std::condition_variable newer_;   // Notified after each new sample, under mutex_'s data.
     std::optional<eye_server::Sample> latest_;
     std::mutex listener_mutex_;
     std::function<void(const eye_server::Sample &)> listener_;
