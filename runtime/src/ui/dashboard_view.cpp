@@ -280,6 +280,11 @@ void DashboardView::render_eye(Canvas &c, float x, float y, const char *name, co
     constexpr float kRange = 45;
     c.fill_rect({x, y, kEyeGroupW, 300}, kPanel, 6);
     medium_.draw(c, x + 20, y + 36, name, 26, kText);
+    if (e.rate_ok) {   // The eye tracker's own sample rate, at the right of the eye's title.
+        char hz[48];
+        snprintf(hz, sizeof(hz), "Eye tracker %.0f Hz", e.eye_hz);
+        regular_.draw(c, x + kEyeGroupW - 20 - regular_.measure(hz, 18), y + 36, hz, 18, kMuted);
+    }
     const Rect plot{x + 20, y + 58, kPlot, kPlot};
     c.fill_rect(plot, kBg, 4);
     c.stroke_rect(plot, kLine, 4, 1);

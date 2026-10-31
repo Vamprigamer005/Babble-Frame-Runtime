@@ -62,6 +62,17 @@ void apply_thread_spec(const ThreadSpec &spec) {
     }
 }
 
+bool set_thread_nice(int nice) {
+    if (nice < 0) {
+        rlimit rl{};
+        if (getrlimit(RLIMIT_NICE, &rl) == 0 && rl.rlim_cur < rl.rlim_max) {
+            rl.rlim_cur = rl.rlim_max;
+            setrlimit(RLIMIT_NICE, &rl);
+        }
+    }
+    return setpriority(PRIO_PROCESS, gettid(), nice) == 0;
+}
+
 std::thread start_thread(ThreadSpec spec, std::function<void()> fn) {
     return std::thread([spec = std::move(spec), fn = std::move(fn)] {
         apply_thread_spec(spec);

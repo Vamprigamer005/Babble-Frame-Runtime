@@ -102,8 +102,11 @@ private:
     // the fixation point. A short or noisy fixation depth then cannot cross the eyes.
     std::atomic<bool> parallel_{false};
 
-    // Each tick function returns true if it published a valid sample.
-    bool tick_independent(uint64_t now);
+    // Each tick function returns true if it published a valid sample. tick_eye_service reads the eye-service
+    // shared memory: the gaze before fusion (independent) or the fused gaze (fast combined).
+    bool tick_eye_service(uint64_t now, bool fused);
+    bool tick_independent(uint64_t now) { return tick_eye_service(now, false); }
+    void update_eye_rate(uint64_t now);   // Publishes _EyeTrackerHz once a second while Show Eye Rate is on.
     bool tick_combined(uint64_t now);
     void publish(double lx, double ly, double rx, double ry, uint64_t now, bool centre = false);
     void centre(uint64_t now) { publish(0, 0, 0, 0, now, true); }
@@ -134,6 +137,15 @@ private:
     gaze::Predictor predictor_;
     std::atomic<int> prediction_{0};
     std::atomic<bool> instant_{true};
+    // Combined gaze from the eye service's fused gaze instead of SteamVR's input API (faster, can use Instant Gaze).
+    std::atomic<bool> fast_combined_{false};
+    // Shows the eye tracker's sample rate on the Babble tab.
+    std::atomic<bool> show_rate_{true};
+    SignalId rate_id_{};
+    uint64_t rate_seq_ = 0, rate_count_ = 0, rate_since_ = 0;
+    // Runs the gaze and eye-service reader threads at nice -5 instead of their configured priority.
+    std::atomic<bool> high_priority_{true};
+    bool high_applied_ = false;
     bool stats_registered_ = false;
 };
 

@@ -91,6 +91,8 @@ public:
 
     // Tells the reader that a consumer needs samples or not, and the reader waits when no consumer needs them.
     void want(Consumer c, bool on);
+    // Asks the reader thread to run at a higher priority (nice -5) or at its configured one. It applies on its loop.
+    void set_high_priority(bool on) { high_priority_ = on; }
     // Returns true while the file is open and valid.
     bool available() const { return available_.load(); }
     // Returns the newest sample if it arrived within max_age_ns.
@@ -117,6 +119,7 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<uint32_t> wanted_{0};
     std::atomic<bool> available_{false};
+    std::atomic<bool> high_priority_{false};
 
     int fd_ = -1;
     uint8_t *base_ = nullptr;

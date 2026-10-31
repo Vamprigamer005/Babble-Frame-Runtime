@@ -1213,7 +1213,9 @@ int main(int argc, char **argv) {
                             for (const char *id :
                                  {"/pipelines/eye/openness_source", "/pipelines/gaze/gaze_source",
                                   "/pipelines/gaze/smoothing", "/pipelines/gaze/convergence",
-                                  "/pipelines/gaze/prediction", "/pipelines/gaze/instant", "/dashboard/enabled",
+                                  "/pipelines/gaze/prediction", "/pipelines/gaze/instant",
+                                  "/pipelines/gaze/combined_source", "/pipelines/gaze/show_rate",
+                                  "/pipelines/gaze/high_priority", "/dashboard/enabled",
                                   "/mouth_source", "/pc_address"}) {
                                 const json::json_pointer ptr(id);
                                 if (fresh.contains(ptr))
