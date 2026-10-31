@@ -46,6 +46,8 @@ struct EyeReading {
     double neutral = 0, wide_raw = 0;    // The neutral and wide ceiling of the calibration, in raw units.
     bool dilation_ok = false;            // False until the pupil baseline exists.
     double dilation = 0;                 // The Dilation output, from 0 to 1, where 0.5 is the baseline.
+    bool rate_ok = false;                // True while Show Eye Rate publishes the eye tracker's rate.
+    double eye_hz = 0;                   // Eye tracker samples a second (the same for both eyes).
 };
 
 // The status of the output for the front page: the PC link, VRChat native face tracking or Babble OSC.

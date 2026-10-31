@@ -214,10 +214,14 @@ bool SteamVrGaze::init() {
     }
     prediction_ = pred;
     instant_ = cfg_.value("instant", true);
+    fast_combined_ = cfg_.value("combined_source", std::string("steamvr")) == "eye_service";
+    show_rate_ = cfg_.value("show_rate", true);
+    high_priority_ = cfg_.value("high_priority", true);
 
     const char *names[4] = {"LeftEyeX", "LeftEyeY", "RightEyeX", "RightEyeY"};
     for (int i = 0; i < 4; i++)
         ids_[i] = deps_.state.add_signal(names[i]);
+    rate_id_ = deps_.state.add_signal("_EyeTrackerHz");   // Internal: the dashboard shows it, the sinks do not send it.
     const std::string p = "pipe." + name_ + ".";
     deps_.stats.add(p + "samples_per_s", &samples_);
     deps_.stats.add(p + "invalid", &invalid_);
@@ -253,6 +257,24 @@ bool SteamVrGaze::set_option(const std::string &key, const nlohmann::json &value
             return false;
         if (value.get<bool>() != instant_.exchange(value.get<bool>()))
             LOG.info("pipeline %s: instant gaze %s", name_.c_str(), value.get<bool>() ? "on" : "off");
+        return true;
+    }
+    if (key == "combined_source") {
+        if (value != "steamvr" && value != "eye_service")
+            return false;
+        const bool fast = value == "eye_service";
+        if (fast != fast_combined_.exchange(fast)) {
+            smoothing_reset_ = true;
+            LOG.info("pipeline %s: combined gaze from %s", name_.c_str(), fast ? "the eye service" : "SteamVR input");
+        }
+        return true;
+    }
+    if (key == "show_rate" || key == "high_priority") {
+        if (!value.is_boolean())
+            return false;
+        auto &flag = key == "show_rate" ? show_rate_ : high_priority_;
+        if (value.get<bool>() != flag.exchange(value.get<bool>()))
+            LOG.info("pipeline %s: %s %s", name_.c_str(), key.c_str(), value.get<bool>() ? "on" : "off");
         return true;
     }
     if (key == "convergence") {
@@ -317,7 +339,7 @@ void SteamVrGaze::publish(double lx, double ly, double rx, double ry, uint64_t n
 
 // Get the direction of each eye from the eye-service shared memory. While "Track Dominant Eye Only" is on, the gaze
 // before fusion still has both eyes, so both eyes get the fused gaze of the tracked eye, as SteamVR apps do.
-bool SteamVrGaze::tick_independent(uint64_t now) {
+bool SteamVrGaze::tick_eye_service(uint64_t now, bool fused) {
     auto s = deps_.eye_server->latest(uint64_t(stale_ns_));
     if (!s)
         return false;
@@ -334,8 +356,11 @@ bool SteamVrGaze::tick_independent(uint64_t now) {
     last_seq_ = s->seq;
     age_.add(now - s->received_ns);
     const bool one_eye = dominant_eye_ >= 0;
-    const auto &l = one_eye ? s->gaze[dominant_eye_] : s->pre_fusion_gaze[eye_server::kLeftEye];
-    const auto &r = one_eye ? s->gaze[dominant_eye_] : s->pre_fusion_gaze[eye_server::kRightEye];
+    // Fused gaze is the service's gaze after it combines both eyes; it is what SteamVR apps get.
+    const auto &l = one_eye ? s->gaze[dominant_eye_]
+                            : (fused ? s->gaze[eye_server::kLeftEye] : s->pre_fusion_gaze[eye_server::kLeftEye]);
+    const auto &r = one_eye ? s->gaze[dominant_eye_]
+                            : (fused ? s->gaze[eye_server::kRightEye] : s->pre_fusion_gaze[eye_server::kRightEye]);
     if (parallel_ && !one_eye) {
         auto g = gaze::parallel(l, r, max_deg_, flip_y_, off_, scaling_);
         if (!g)
@@ -410,18 +435,50 @@ bool SteamVrGaze::tick_combined(uint64_t now) {
     return true;
 }
 
+void SteamVrGaze::update_eye_rate(uint64_t now) {
+    if (!show_rate_ || !deps_.eye_server)
+        return;
+    if (auto s = deps_.eye_server->latest(uint64_t(1e9))) {
+        if (rate_seq_ && s->seq > rate_seq_)
+            rate_count_ += s->seq - rate_seq_;   // Counts samples even if this loop did not see each one.
+        rate_seq_ = s->seq;
+    }
+    if (!rate_since_)
+        rate_since_ = now;
+    if (now - rate_since_ >= 1000000000ull) {
+        const double hz = double(rate_count_) * 1e9 / double(now - rate_since_);
+        std::pair<SignalId, Signal> u[1] = {{rate_id_, {float(hz), 1.0f, now}}};
+        deps_.state.update(u);
+        rate_count_ = 0;
+        rate_since_ = now;
+    }
+}
+
 void SteamVrGaze::run() {
     const uint64_t period = uint64_t(1e9 / std::max(1.0, cfg_.value("rate_hz", 90.0)));
     uint64_t last_valid = 0;
     bool centred = true;
-    enum class Using { None, Independent, Combined } using_ = Using::None;
+    enum class Using { None, Independent, Combined, FastCombined } using_ = Using::None;
 
     while (!stop_) {
         const uint64_t now = mono_ns();
-        // The eye-service reader runs only while the pipeline needs independent gaze.
+        if (const bool high = high_priority_.load(); high != high_applied_) {
+            const int nice = high ? std::min(thread_spec_.nice, -5) : thread_spec_.nice;
+            if (set_thread_nice(nice))
+                LOG.info("pipeline %s: gaze priority %s (nice %d)", name_.c_str(), high ? "high" : "normal", nice);
+            else
+                LOG.warn("pipeline %s: setting nice %d refused", name_.c_str(), nice);
+            if (deps_.eye_server)
+                deps_.eye_server->set_high_priority(high);
+            high_applied_ = high;
+        }
+        // The eye-service reader runs only while the pipeline needs it: independent or fast combined gaze, or the
+        // eye rate on the Babble tab.
         const bool want_independent = tracking_ && independent_ && deps_.eye_server;
+        const bool want_fast_combined = tracking_ && !independent_ && fast_combined_ && deps_.eye_server;
         if (deps_.eye_server)
-            deps_.eye_server->want(EyeServerClient::Gaze, want_independent);
+            deps_.eye_server->want(EyeServerClient::Gaze,
+                                   want_independent || want_fast_combined || (tracking_ && show_rate_));
         if (!tracking_) {   // The user turned the eye feed off.
             if (!centred) {
                 centre(now);
@@ -432,10 +489,13 @@ void SteamVrGaze::run() {
         }
 
         Using used = Using::None;
-        if (want_independent && tick_independent(now))
+        if (want_independent && tick_eye_service(now, false))
             used = Using::Independent;
+        else if (want_fast_combined && tick_eye_service(now, true))
+            used = Using::FastCombined;
         else if (tick_combined(now))
             used = Using::Combined;
+        update_eye_rate(now);
         if (want_independent && used != Using::Independent)
             fallback_.add();
 
@@ -453,7 +513,7 @@ void SteamVrGaze::run() {
         }
         // In independent mode, send each eye-service sample as soon as it arrives instead of on the next tick.
         // The period is still the longest wait, so the stale check and setting changes keep running.
-        if (instant_ && used == Using::Independent)
+        if (instant_ && (used == Using::Independent || used == Using::FastCombined))
             deps_.eye_server->wait_newer(last_seq_, period);
         else
             sleep_ns(period);

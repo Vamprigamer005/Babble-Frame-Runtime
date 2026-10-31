@@ -15,6 +15,10 @@ struct ThreadSpec {
     int nice = 0;
 };
 
+// Sets the nice value of the calling thread only, raising the soft RLIMIT_NICE first when it is negative. Returns
+// false if the kernel refused it.
+bool set_thread_nice(int nice);
+
 // Reads config["threads"][key], or gives the default name with no pinning if the entry is missing.
 ThreadSpec thread_spec(const nlohmann::json &threads_cfg, const std::string &key, const char *default_name);
 

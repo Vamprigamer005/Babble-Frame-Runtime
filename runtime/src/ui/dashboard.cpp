@@ -35,6 +35,7 @@ void Dashboard::start(SteamVrClient &vr, ThreadSpec thread, Options options, std
             "_RightEyeNeutral", "_RightEyeWideRaw", "RightEyeDilation"};
         for (int i = 0; i < 2 * kPerEye; i++)   // add_signal is idempotent, so this gets the pipeline signals.
             eye_ids_[i] = options_.state->add_signal(names[i]);
+        eye_rate_id_ = options_.state->add_signal("_EyeTrackerHz");
     }
     if (!view_.load_fonts(options_.fonts_dir))
         LOG.warn("dashboard: fonts not found in %s; text won't be drawn", options_.fonts_dir.c_str());
@@ -253,6 +254,15 @@ std::array<EyeReading, 2> Dashboard::read_eyes() const {
         r.dilation_ok = recent(dil);
         r.dilation = dil.value;
     }
+    // The rate updates once a second, so a value older than 2.5 s means Show Eye Rate is off.
+    std::array<SignalId, 1> rid{eye_rate_id_};
+    Signal rate[1];
+    options_.state->read(rid, rate);
+    const bool rate_ok = rate[0].t_ns != 0 && now - rate[0].t_ns < 2500000000ull;
+    for (auto &r : out) {
+        r.rate_ok = rate_ok;
+        r.eye_hz = rate[0].value;
+    }
     return out;
 }
 
@@ -451,7 +461,8 @@ void Dashboard::run() {
                               std::fabs(a.widen - b.widen) > 0.005 || a.raw != b.raw ||
                               std::fabs(a.raw_lid - b.raw_lid) > 0.002 || a.cal != b.cal ||
                               std::fabs(a.neutral - b.neutral) > 0.002 || std::fabs(a.wide_raw - b.wide_raw) > 0.002 ||
-                              a.dilation_ok != b.dilation_ok || std::fabs(a.dilation - b.dilation) > 0.005;
+                              a.dilation_ok != b.dilation_ok || std::fabs(a.dilation - b.dilation) > 0.005 ||
+                              a.rate_ok != b.rate_ok || std::lround(a.eye_hz) != std::lround(b.eye_hz);
                 }
             }
             // Show a new camera preview, at most about 15 times a second.
