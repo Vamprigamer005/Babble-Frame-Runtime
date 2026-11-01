@@ -45,8 +45,8 @@ TEST_CASE("signals map onto VRCFaceTracking's blob as its module maps them") {
     CHECK(vrc_native::target_of("jawOpen").shapes == std::vector<uint8_t>{22});
     CHECK(vrc_native::target_of("mouthFunnel").shapes.size() == 4);
     CHECK(vrc_native::target_of("LeftEyeWiden").shapes == std::vector<uint8_t>{3});
+    CHECK(vrc_native::target_of("LeftEyeDilation").kind == vrc_native::Target::LeftPupil);
     // This signal is not in the blob.
-    CHECK(vrc_native::target_of("LeftEyeDilation").kind == vrc_native::Target::None);
     CHECK(vrc_native::target_of("_LeftEyeLidRaw").kind == vrc_native::Target::None);
 
     // When nothing is set, the eyes are open (closed bytes are 0) and all other values are 0.
@@ -78,6 +78,27 @@ TEST_CASE("signals map onto VRCFaceTracking's blob as its module maps them") {
     CHECK(b[14 + 22] == 255);   // This is JawOpen.
     CHECK(b[14 + 83] == 127);   // This is TongueTwistLeft.
     CHECK(b[14 + 36] == 0);     // This is LipFunnelUpperRight, and mouthFunnel is not set.
+}
+
+TEST_CASE("pupil dilation maps onto the dilate and constrict bytes as VRCFT maps the Babble module's mm") {
+    const std::vector<vrc_native::Target> targets = {vrc_native::target_of("RightEyeDilation"),
+                                                     vrc_native::target_of("LeftEyeDilation")};
+    auto enc = [&](std::optional<float> r, std::optional<float> l) { return vrc_native::encode(targets, {r, l}); };
+    // The baseline (0.5) is 5 mm, which is neutral, and a missing value is neutral too.
+    for (const auto &b : {enc(0.5f, 0.5f), enc(std::nullopt, std::nullopt)})
+        for (int i = 10; i < 14; i++)
+            CHECK(b[size_t(i)] == 0);
+    // A dilation of 1 is 8 mm (weight 0.6), and 0 is 2 mm (weight -0.6). The bytes are right, left, right, left.
+    auto b = enc(1.0f, 0.0f);
+    CHECK(b[10] == 153);
+    CHECK(b[11] == 0);
+    CHECK(b[12] == 0);
+    CHECK(b[13] == 153);
+    // Values outside 0..1 clamp like the module, and 0.75 is 6.5 mm (weight 0.3).
+    b = enc(2.0f, 0.75f);
+    CHECK(b[10] == 153);
+    CHECK(b[11] == 76);
+    CHECK(b[13] == 0);
 }
 
 namespace {
