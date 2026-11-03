@@ -30,11 +30,6 @@ std::optional<std::array<double, 3>> convert(double x, double y, double z, doubl
 std::optional<std::array<double, 2>> from_direction(double x, double y, double z, double max_deg, bool flip_y,
                                                     const Offsets &off, Scaling scaling = Scaling::Angle);
 
-// One direction for both eyes: the mean of the two unit eye directions, so the eyes stay parallel.
-std::optional<std::array<double, 2>> parallel(const std::array<float, 3> &l, const std::array<float, 3> &r,
-                                              double max_deg, bool flip_y, const Offsets &off,
-                                              Scaling scaling = Scaling::Angle);
-
 // The optional One Euro smoothing of the four gaze values, with one preset for each level above 0 (off).
 class Smoother {
 public:
@@ -49,25 +44,6 @@ private:
     OneEuro filter_{4};
     int level_ = 0;   // The level that filter_ was made for, or 0 if it starts again.
     uint64_t last_ns_ = 0;
-};
-
-// Optional gaze prediction: estimates how fast each of the four gaze values is moving and sends where it will be a
-// little later, which hides part of the eye tracker's lag. Each level above 0 (off) has its own look-ahead time.
-class Predictor {
-public:
-    explicit Predictor(std::vector<double> lookahead_s = {}, double max_delta = 0.25)
-        : lookahead_s_(std::move(lookahead_s)), max_delta_(max_delta) {}
-    int levels() const { return int(lookahead_s_.size()); }
-    // Writes the predicted values to out. A sample equal to the last one keeps the speed estimate unchanged.
-    void apply(const float in[4], float out[4], int level, uint64_t now_ns);
-    void reset() { have_ = false; }
-
-private:
-    std::vector<double> lookahead_s_;
-    double max_delta_;
-    std::array<double, 4> prev_{}, vel_{};
-    uint64_t last_ns_ = 0;
-    bool have_ = false;
 };
 
 }
@@ -98,15 +74,9 @@ private:
     std::string feed_;
     std::atomic<bool> tracking_{true};   // When this is false, the pipeline centres the gaze one time and stops.
     std::atomic<bool> independent_{true};   // This is true if gaze_source is "independent".
-    // When this is true, both eyes get one direction (the gaze from the head centre) instead of each eye aiming at
-    // the fixation point. A short or noisy fixation depth then cannot cross the eyes.
-    std::atomic<bool> parallel_{false};
 
-    // Each tick function returns true if it published a valid sample. tick_eye_service reads the eye-service
-    // shared memory: the gaze before fusion (independent) or the fused gaze (fast combined).
-    bool tick_eye_service(uint64_t now, bool fused);
-    bool tick_independent(uint64_t now) { return tick_eye_service(now, false); }
-    void update_eye_rate(uint64_t now);   // Publishes _EyeTrackerHz once a second while Show Eye Rate is on.
+    // Each tick function returns true if it published a valid sample.
+    bool tick_independent(uint64_t now);
     bool tick_combined(uint64_t now);
     void publish(double lx, double ly, double rx, double ry, uint64_t now, bool centre = false);
     void centre(uint64_t now) { publish(0, 0, 0, 0, now, true); }
@@ -119,11 +89,6 @@ private:
 
     RateStat samples_;
     Counter invalid_, reconnects_, fallback_;
-    // Diagnostics for independent gaze: how old each eye-service sample is when it is sent (one clock, mono_ns on
-    // the headset), and how many ticks sent a sample that was already sent because no new one had come.
-    LatencyStat age_;
-    Counter repeats_;
-    uint64_t last_seq_ = 0;
     double max_deg_ = 45, stale_ns_ = 5e8;
     bool flip_y_ = false;
     gaze::Scaling scaling_ = gaze::Scaling::Angle;
@@ -133,19 +98,6 @@ private:
     gaze::Smoother smoother_;
     std::atomic<int> smoothing_{0};
     std::atomic<bool> smoothing_reset_{false};
-    // Gaze prediction level (0 is off), and instant sending of each new eye-service sample in independent mode.
-    gaze::Predictor predictor_;
-    std::atomic<int> prediction_{0};
-    std::atomic<bool> instant_{true};
-    // Combined gaze from the eye service's fused gaze instead of SteamVR's input API (faster, can use Instant Gaze).
-    std::atomic<bool> fast_combined_{false};
-    // Shows the eye tracker's sample rate on the Babble tab.
-    std::atomic<bool> show_rate_{true};
-    SignalId rate_id_{};
-    uint64_t rate_seq_ = 0, rate_count_ = 0, rate_since_ = 0;
-    // Runs the gaze and eye-service reader threads at nice -5 instead of their configured priority.
-    std::atomic<bool> high_priority_{true};
-    bool high_applied_ = false;
     bool stats_registered_ = false;
 };
 
