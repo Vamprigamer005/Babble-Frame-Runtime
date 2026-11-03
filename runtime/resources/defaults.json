@@ -197,7 +197,6 @@
       "prediction_ms": [10, 20, 35],
       "prediction_max": 0.25,
       "instant": true,
-      "combined_source": "steamvr",
       "show_rate": true,
       "high_priority": true,
       "smoothing_presets": [
@@ -491,14 +490,6 @@
         "hint": "Independent lets each eye move on its own. Combined uses the single gaze of SteamVR.",
         "options": ["independent", "combined"],
         "labels": ["Independent", "Combined"]
-      },
-      {
-        "id": "/pipelines/gaze/combined_source",
-        "page": "eye_sources",
-        "label": "Combined From",
-        "hint": "Where Combined gaze comes from. Eye Tracker reads the headset's combined gaze directly (faster, works with Instant Gaze). SteamVR asks SteamVR for it, as before.",
-        "options": ["steamvr", "eye_service"],
-        "labels": ["SteamVR", "Eye Tracker"]
       },
       {
         "id": "/pipelines/gaze/convergence",
