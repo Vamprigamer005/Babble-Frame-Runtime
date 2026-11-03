@@ -479,10 +479,7 @@ void SteamVrGaze::run() {
         // The eye-service reader runs only while the pipeline needs it: independent or fast combined gaze, or the
         // eye rate on the Babble tab.
         const bool want_independent = tracking_ && independent_ && deps_.eye_server;
-        // Combined gaze comes from the eye service's fused gaze, which is already in head space. SteamVR's input API
-        // gives a world-space point that must be turned back with the HMD pose, and a pose that does not match the
-        // gaze sample makes head movement show up as eye movement, so it is only the fallback.
-        const bool want_fast_combined = tracking_ && !independent_ && deps_.eye_server;
+        const bool want_fast_combined = tracking_ && !independent_ && fast_combined_ && deps_.eye_server;
         if (deps_.eye_server)
             deps_.eye_server->want(EyeServerClient::Gaze,
                                    want_independent || want_fast_combined || (tracking_ && show_rate_));
