@@ -48,6 +48,8 @@ bool BabbleEye::init() {
     babble_swap_ = cfg_.value("babble_swap", false);
     combine_widen_ = cfg_.value("combine_widen", true);
     combine_dilation_ = cfg_.value("combine_dilation", true);
+    widen_sens_ = std::clamp(cfg_.value("widen_sensitivity", 1.0), 0.1, 10.0);
+    dilation_sens_ = std::clamp(cfg_.value("dilation_sensitivity", 1.0), 0.1, 10.0);
     // The eyes use their own One Euro filters, which are tuned apart from the mouth filters.
     lid_filter_ = one_euro_params(cfg_.value("one_euro", nlohmann::json::object()), eye::kLidOneEuro);
     // The eye kit gives the pupil in mm, so its filter and rate limit are in mm.
@@ -149,6 +151,13 @@ void BabbleEye::retune(double hz) {
 }
 
 bool BabbleEye::set_option(const std::string &key, const nlohmann::json &value) {
+    if ((key == "widen_sensitivity" || key == "dilation_sensitivity") && value.is_number()) {
+        auto &sens = key == "widen_sensitivity" ? widen_sens_ : dilation_sens_;
+        const double v = std::clamp(value.get<double>(), 0.1, 10.0);
+        if (v != sens.exchange(v))
+            LOG.info("pipeline %s: %s %.2f", name_.c_str(), key.c_str(), v);
+        return true;
+    }
     if ((key == "combine_widen" || key == "combine_dilation") && value.is_boolean()) {
         auto &flag = key == "combine_widen" ? combine_widen_ : combine_dilation_;
         if (value.get<bool>() != flag.exchange(value.get<bool>()))
@@ -286,6 +295,13 @@ void BabbleEye::process(const StereoFrame &sf) {
             dil[0] = dil[1] = (*dil[0] + *dil[1]) / 2;
         else
             dil[0] = dil[1] = dil[0] ? dil[0] : dil[1];
+    }
+    // Sensitivity makes Widen and dilation easier to reach. The output is clamped to 0..1 when it is sent.
+    const double ws = widen_sens_.load(std::memory_order_relaxed), ds = dilation_sens_.load(std::memory_order_relaxed);
+    for (int e = 0; e < 2; e++) {
+        widen[e] = std::clamp(widen[e] * ws, 0.0, 1.0);
+        if (dil[e])
+            dil[e] = 0.5 + (*dil[e] - 0.5) * ds;
     }
 
     // The module sides follow the avatar, so by default "Left" is view 3 and "Right" is view 2.
