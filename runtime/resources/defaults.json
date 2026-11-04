@@ -175,6 +175,7 @@
       "babble_swap": false,
       "combine_widen": true,
       "combine_dilation": true,
+      "widen_source": "openness",
       "widen_sensitivity": 1,
       "dilation_sensitivity": 1
     },
@@ -484,6 +485,14 @@
         "hint": "Babble uses the runtime's eye model. Native uses the headset's own eye openness.",
         "options": ["model", "native"],
         "labels": ["Babble", "Native"]
+      },
+      {
+        "id": "/pipelines/eye/widen_source",
+        "page": "eye_sources",
+        "label": "Widen Source",
+        "hint": "Eye Openness learns your normal and widest eyes and scales Widen between them. Babble Model uses the eye model's own Widen.",
+        "options": ["openness", "model"],
+        "labels": ["Eye Openness", "Babble Model"]
       },
       {
         "id": "/pipelines/gaze/gaze_source",
