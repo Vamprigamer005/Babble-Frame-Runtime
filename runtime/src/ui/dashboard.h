@@ -82,6 +82,7 @@ private:
     // The number of signals for each eye.
     static constexpr int kPerEye = 8;
     std::array<SignalId, 2 * kPerEye> eye_ids_{};
+    SignalId eye_rate_id_{};   // _EyeTrackerHz from the gaze pipeline.
     std::array<EyeReading, 2> drawn_eyes_{};
     uint64_t last_present_ns_ = 0;
     CameraPreview preview_;          // Only the dashboard thread uses this.

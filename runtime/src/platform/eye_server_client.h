@@ -5,6 +5,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -90,10 +91,14 @@ public:
 
     // Tells the reader that a consumer needs samples or not, and the reader waits when no consumer needs them.
     void want(Consumer c, bool on);
+    // Asks the reader thread to run at a higher priority (nice -5) or at its configured one. It applies on its loop.
+    void set_high_priority(bool on) { high_priority_ = on; }
     // Returns true while the file is open and valid.
     bool available() const { return available_.load(); }
     // Returns the newest sample if it arrived within max_age_ns.
     std::optional<eye_server::Sample> latest(uint64_t max_age_ns) const;
+    // Waits until a sample with a seq above seq arrives, or timeout_ns passes. Returns true if one arrived.
+    bool wait_newer(uint64_t seq, uint64_t timeout_ns) const;
     // Sets a function that the reader thread calls for each sample, so the function must be fast.
     void set_listener(std::function<void(const eye_server::Sample &)> fn);
     // Returns the layout version of the open file, or 0 if no file is open.
@@ -114,6 +119,7 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<uint32_t> wanted_{0};
     std::atomic<bool> available_{false};
+    std::atomic<bool> high_priority_{false};
 
     int fd_ = -1;
     uint8_t *base_ = nullptr;
@@ -123,6 +129,7 @@ private:
     int dominant_eye_ = -1;   // The last value of the setting that decoded, which only the reader thread uses.
 
     mutable std::mutex mutex_;
+    mutable std::condition_variable newer_;   // Notified after each new sample, under mutex_'s data.
     std::optional<eye_server::Sample> latest_;
     std::mutex listener_mutex_;
     std::function<void(const eye_server::Sample &)> listener_;

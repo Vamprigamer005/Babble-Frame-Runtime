@@ -59,6 +59,9 @@ private:
     std::atomic<bool> tracking_on_{true};
     // These are "combine_widen" and "combine_dilation": both eyes then get the mean of the two eyes.
     std::atomic<bool> combine_widen_{true}, combine_dilation_{true};
+    // These are "widen_sensitivity" and "dilation_sensitivity": 1 sends the values unchanged. Widen is multiplied by
+    // it, and dilation moves away from the 0.5 baseline that much more.
+    std::atomic<double> widen_sens_{1.0}, dilation_sens_{1.0};
     void update_eye_server_want();
     Counter native_fallback_;
     bool use_calib_ = true, babble_swap_ = false;
