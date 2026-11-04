@@ -56,6 +56,7 @@ bool BabbleEye::init() {
         }
         widen_from_head_ = ws == "model";
     }
+    widen_dead_ = std::clamp(cfg_.value("widen_deadzone", 0.0), 0.0, 0.9);
     widen_sens_ = std::clamp(cfg_.value("widen_sensitivity", 1.0), 0.1, 10.0);
     dilation_sens_ = std::clamp(cfg_.value("dilation_sensitivity", 1.0), 0.1, 10.0);
     // The eyes use their own One Euro filters, which are tuned apart from the mouth filters.
@@ -163,6 +164,12 @@ bool BabbleEye::set_option(const std::string &key, const nlohmann::json &value) 
         const bool head = value == "model";
         if (head != widen_from_head_.exchange(head))
             LOG.info("pipeline %s: Widen from %s", name_.c_str(), head ? "the eye kit Widen head" : "the openness");
+        return true;
+    }
+    if (key == "widen_deadzone" && value.is_number()) {
+        const double v = std::clamp(value.get<double>(), 0.0, 0.9);
+        if (v != widen_dead_.exchange(v))
+            LOG.info("pipeline %s: widen_deadzone %.2f", name_.c_str(), v);
         return true;
     }
     if ((key == "widen_sensitivity" || key == "dilation_sensitivity") && value.is_number()) {
@@ -312,8 +319,10 @@ void BabbleEye::process(const StereoFrame &sf) {
     }
     // Sensitivity makes Widen and dilation easier to reach. The output is clamped to 0..1 when it is sent.
     const double ws = widen_sens_.load(std::memory_order_relaxed), ds = dilation_sens_.load(std::memory_order_relaxed);
+    const double dz = widen_dead_.load(std::memory_order_relaxed);
     for (int e = 0; e < 2; e++) {
-        widen[e] = std::clamp(widen[e] * ws, 0.0, 1.0);
+        // The deadzone ignores small openings, so that an eye opened a little does not move Widen.
+        widen[e] = std::clamp((widen[e] - dz) / (1.0 - dz) * ws, 0.0, 1.0);
         if (dil[e])
             dil[e] = 0.5 + (*dil[e] - 0.5) * ds;
     }

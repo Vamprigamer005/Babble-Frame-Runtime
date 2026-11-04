@@ -192,6 +192,9 @@ struct Choice {
     std::vector<std::string> option_labels{};   // If set, one label for each option replaces the value and unit.
     // For a text setting, the setting value of each option. The options are then their indexes.
     std::vector<std::string> text_values{};
+    // A slider sets any value from slider_min to slider_max, in slider_step steps, where the user clicks its track.
+    bool slider = false;
+    double slider_min = 0, slider_max = 1, slider_step = 0;
 };
 
 // Gaze smoothing only takes ints
@@ -259,13 +262,14 @@ private:
             Cog, Back, Option, Toggle, Visualizer, Restart, MouthSource, OpenCameras, Camera, Refresh,
             OpenDiagnostics, Verbose, WriteDiagnostics, CapturePrimary, CaptureRemove, Update, OpenOutputs,
             OutputSetting, EditText, OpenEye, OpenMouth, OpenCameraOptions, OpenResolution, OpenEyeSources,
-            OpenEyeModifiers
+            OpenEyeModifiers, Slider
         } kind;
         Rect rect;
         size_t choice = 0;   // The choice index for Option, or the feed index for Toggle.
         double value = 0;    // The value for Option, or 1 to turn on for Toggle.
         std::string text{};  // The value for MouthSource, the camera id for Camera, or the setting id.
         std::string json{};  // The new value as JSON text for OutputSetting.
+        double lo = 0, hi = 0, step = 0;   // The range and step of a Slider.
     };
     void render_home(Canvas &c, const Status &s);
     void render_settings(Canvas &c, const std::vector<Choice> &choices, const Status &s);

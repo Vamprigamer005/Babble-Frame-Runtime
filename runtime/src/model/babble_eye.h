@@ -62,6 +62,8 @@ private:
     // These are "widen_sensitivity" and "dilation_sensitivity": 1 sends the values unchanged. Widen is multiplied by
     // it, and dilation moves away from the 0.5 baseline that much more.
     std::atomic<double> widen_sens_{1.0}, dilation_sens_{1.0};
+    // This is "widen_deadzone": Widen below it is 0, and Widen above it is scaled back to 0..1.
+    std::atomic<double> widen_dead_{0.0};
     // This is "widen_source": "openness" takes Widen from the openness above the learned neutral, "model" from the
     // Widen head of the eye kit.
     std::atomic<bool> widen_from_head_{false};

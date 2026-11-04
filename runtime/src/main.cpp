@@ -275,6 +275,12 @@ std::vector<ui::Choice> dashboard_choices(const json &cfg) {
             } else {
                 c.options = c.boolean ? std::vector<double>{0, 1} : row.value("options", std::vector<double>{});
                 c.value = c.boolean ? double(cfg[ptr].get<bool>()) : cfg[ptr].get<double>();
+                if (const auto sl = row.find("slider"); !c.boolean && sl != row.end() && sl->is_object()) {
+                    c.slider = true;
+                    c.slider_min = sl->value("min", 0.0);
+                    c.slider_max = std::max(c.slider_min, sl->value("max", 1.0));
+                    c.slider_step = sl->value("step", 0.0);
+                }
             }
         } catch (const json::exception &) {
             LOG.warn("dashboard: ignoring setting %s: its options do not match its value", c.id.c_str());
