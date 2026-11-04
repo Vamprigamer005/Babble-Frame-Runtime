@@ -81,6 +81,8 @@ std::string format_hz(double hz) {
 
 // Returns the shown value of a choice, such as "On", "60 Hz" or the label of its option.
 std::string choice_value(const Choice &ch) {
+    if (ch.slider)   // A slider shows no number.
+        return ch.value <= ch.slider_min + 1e-6 ? "Off" : "On";
     std::string value = ch.boolean ? (ch.value != 0 ? "On" : "Off") : format_value(ch.value, ch.unit);
     for (size_t k = 0; k < ch.options.size() && k < ch.option_labels.size(); k++)
         if (std::fabs(ch.options[k] - ch.value) < 1e-6)
@@ -501,6 +503,33 @@ float DashboardView::render_choice_rows(Canvas &c, float y, float row_h, const s
             continue;
         }
         const float tx = render_block(c, y, Icon::Rate, row_h);
+        if (ch.slider) {
+            const float track_w = 440, track_x = W - kMargin - 40 - track_w, mid = y + row_h / 2;
+            const Rect hit{track_x - 20, y + 8, track_w + 40, row_h - 16};
+            const double span = ch.slider_max - ch.slider_min;
+            const float frac = span > 0 ? float(std::clamp((ch.value - ch.slider_min) / span, 0.0, 1.0)) : 0;
+            const auto live = s.choice_hints.find(ch.id);
+            const std::string &hint = live != s.choice_hints.end() ? live->second : ch.hint;
+            medium_.draw(c, tx, y + 48 - d, fit(medium_, ch.label, 26, hit.x - tx - 24), 26, kText);
+            regular_.draw(c, tx, y + 83 - d, fit(regular_, hint, 21, hit.x - tx - 24), 21, kMuted);
+            c.fill_rect({track_x, mid - 6, track_w, 12}, kPanel, 6);
+            if (frac > 0)
+                c.fill_rect({track_x, mid - 6, track_w * frac, 12}, kAccent, 6);
+            const float kx = track_x + track_w * frac;
+            c.fill_rect({kx - 16, mid - 16, 32, 32}, hovered(hit) ? kText : kMuted, 16);
+            Hit h{Hit::Slider, {track_x, hit.y, track_w, hit.h}, i, 0};
+            h.lo = ch.slider_min;
+            h.hi = ch.slider_max;
+            h.step = ch.slider_step;
+            hits_.push_back(h);
+            // Clicks just past the ends of the track set the minimum or the maximum.
+            Hit lo{Hit::Option, {hit.x, hit.y, 20, hit.h}, i, ch.slider_min};
+            Hit hi{Hit::Option, {track_x + track_w, hit.y, 20, hit.h}, i, ch.slider_max};
+            hits_.push_back(lo);
+            hits_.push_back(hi);
+            y += row_h;
+            continue;
+        }
         float seg_w = 128;   // The segments of a row grow to fit their widest label.
         for (size_t k = 0; k < ch.options.size(); k++)
             seg_w = std::max(seg_w, medium_.measure(k < ch.option_labels.size() ? ch.option_labels[k]
@@ -1344,6 +1373,16 @@ DashboardView::ClickResult DashboardView::click(Point p) {
             out.setting = std::make_pair(h.choice, h.value);
             out.redraw = true;
             break;
+        case Hit::Slider: {
+            const double frac = std::clamp(double(p.x - h.rect.x) / std::max(1.0, double(h.rect.w)), 0.0, 1.0);
+            double v = h.lo + frac * (h.hi - h.lo);
+            if (h.step > 0)
+                v = h.lo + std::round((v - h.lo) / h.step) * h.step;
+            v = std::round(std::clamp(v, h.lo, h.hi) * 1000.0) / 1000.0;
+            out.setting = std::make_pair(h.choice, v);
+            out.redraw = true;
+            break;
+        }
         case Hit::Toggle:
             out.toggle = std::make_pair(h.choice, h.value > 0.5);
             out.redraw = true;

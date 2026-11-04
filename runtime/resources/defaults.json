@@ -176,6 +176,7 @@
       "combine_widen": true,
       "combine_dilation": true,
       "widen_source": "openness",
+      "widen_deadzone": 0,
       "widen_sensitivity": 1,
       "dilation_sensitivity": 1
     },
@@ -495,6 +496,13 @@
         "labels": ["Eye Openness", "Babble Model"]
       },
       {
+        "id": "/pipelines/eye/widen_deadzone",
+        "page": "eye_sources",
+        "label": "Widen Deadzone",
+        "hint": "Slide right so opening your eyes a little does not move Widen. Only a real wide opening does.",
+        "slider": { "min": 0, "max": 0.6, "step": 0.01 }
+      },
+      {
         "id": "/pipelines/gaze/gaze_source",
         "page": "eye_sources",
         "label": "Gaze Source",
@@ -526,17 +534,15 @@
         "id": "/pipelines/eye/widen_sensitivity",
         "page": "eye_modifiers",
         "label": "Widen Sensitivity",
-        "hint": "Makes Eye Widen easier to reach. Higher needs less effort to open your eyes wide.",
-        "options": [1, 1.5, 2, 3, 4],
-        "labels": ["Normal", "1.5x", "2x", "3x", "4x"]
+        "hint": "Slide right so opening your eyes wide takes less effort.",
+        "slider": { "min": 1, "max": 10, "step": 0.1 }
       },
       {
         "id": "/pipelines/eye/dilation_sensitivity",
         "page": "eye_modifiers",
         "label": "Dilation Sensitivity",
-        "hint": "Makes pupil dilation and constriction show more. Higher moves the pupils further for the same change.",
-        "options": [1, 1.5, 2, 3, 4],
-        "labels": ["Normal", "1.5x", "2x", "3x", "4x"]
+        "hint": "Slide right so your pupils grow and shrink more.",
+        "slider": { "min": 1, "max": 5, "step": 0.1 }
       },
       {
         "id": "/sinks/camera_stream/active",
