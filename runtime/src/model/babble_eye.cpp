@@ -48,6 +48,14 @@ bool BabbleEye::init() {
     babble_swap_ = cfg_.value("babble_swap", false);
     combine_widen_ = cfg_.value("combine_widen", true);
     combine_dilation_ = cfg_.value("combine_dilation", true);
+    {
+        const std::string ws = cfg_.value("widen_source", "openness");
+        if (ws != "openness" && ws != "model") {
+            LOG.error("pipeline %s: widen_source must be openness or model", name_.c_str());
+            return false;
+        }
+        widen_from_head_ = ws == "model";
+    }
     widen_sens_ = std::clamp(cfg_.value("widen_sensitivity", 1.0), 0.1, 10.0);
     dilation_sens_ = std::clamp(cfg_.value("dilation_sensitivity", 1.0), 0.1, 10.0);
     // The eyes use their own One Euro filters, which are tuned apart from the mouth filters.
@@ -151,6 +159,12 @@ void BabbleEye::retune(double hz) {
 }
 
 bool BabbleEye::set_option(const std::string &key, const nlohmann::json &value) {
+    if (key == "widen_source" && value.is_string() && (value == "openness" || value == "model")) {
+        const bool head = value == "model";
+        if (head != widen_from_head_.exchange(head))
+            LOG.info("pipeline %s: Widen from %s", name_.c_str(), head ? "the eye kit Widen head" : "the openness");
+        return true;
+    }
     if ((key == "widen_sensitivity" || key == "dilation_sensitivity") && value.is_number()) {
         auto &sens = key == "widen_sensitivity" ? widen_sens_ : dilation_sens_;
         const double v = std::clamp(value.get<double>(), 0.1, 10.0);
@@ -248,7 +262,7 @@ void BabbleEye::process(const StereoFrame &sf) {
     std::array<double, 2> lid = kr.lid;
     const std::array<double, 2> &pupil = kr.mm;
     std::optional<std::array<double, 2>> head_widen;   // The output of the Widen head of the eye kit.
-    if (kit_->has_widen() && widen_gain_ > 0)
+    if (kit_->has_widen() && widen_gain_ > 0 && widen_from_head_.load(std::memory_order_relaxed))
         head_widen = kr.widen;
     if (native_openness_ && deps_.eye_server) {
         // Index e=0 is view 2, which is the right eye of the wearer.
